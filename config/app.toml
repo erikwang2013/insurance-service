@@ -1,0 +1,29 @@
+# 保险服务平台 bee-rust 应用配置模板
+# 复制为 config/app.toml 并填充真实值；支持 ${ENV_VAR} 环境变量插值
+
+[server]
+host = "0.0.0.0"
+port = 8080
+
+[database]
+url = "${DATABASE_URL}"
+
+[redis]
+url = "${REDIS_URL}"
+
+[opensearch]
+url = "${OPENSEARCH_URL}"
+username = "${OPENSEARCH_USERNAME}"
+password = "${OPENSEARCH_PASSWORD}"
+
+[jwt]
+secret = "${JWT_SECRET}"
+issuer = "${JWT_ISSUER}"
+access_expiry = 7200
+refresh_expiry = 604800
+
+[crypto]
+master_key = "${CRYPTO_MASTER_KEY}"
+
+[log]
+level = "info"

@@ -1,0 +1,92 @@
+[workspace]
+resolver = "2"
+members = ["."]            # 单 crate；后续可按需拆分 crates/
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+rust-version = "1.87"
+
+[workspace.dependencies]
+axum = "0.8"               # 与 bee_router 对齐（bee-rust[workspace].axum）
+tokio = { version = "1", features = ["full"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+async-trait = "0.1"
+chrono = { version = "0.4", features = ["serde"] }
+rust_decimal = { version = "1", features = ["serde"] }
+jsonwebtoken = "9"
+regex = "1"
+base64 = "0.22"
+aes-gcm = "0.10"
+argon2 = "0.5"               # 密码哈希
+uuid = { version = "1", features = ["v4"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+
+# bee-rust（v1.0.6，git 依赖，锁定 rev 保证可复现）
+# 注意：2026-09-01 起 GitHub git 协议（clone/ls-remote）在本机间歇性超时，但 codeload
+# tarball 与 api.github.com 通畅。为不阻塞开发，临时使用 /home/erik/vendor/bee-rust
+# （从 HEAD 93dd5c57 快照解压的本地副本，path 指向 crates/bee_rust 子 crate，因仓库根为
+# virtual workspace manifest）作为依赖；GitHub git 恢复后切回：
+#   bee_rust = { git = "https://github.com/erikwang2013/bee-rust", features = ["full"] }
+bee_rust = { path = "/home/erik/vendor/bee-rust/crates/bee_rust", features = ["full"] }
+
+# rust-scout 全文搜索门面（OpenSearch 走 elasticsearch feature）
+rust_scout = { version = "0.3", features = ["elasticsearch"] }
+
+# security-rust 已被 bee_rust 间接引用，此处显式声明便于直接使用 Scanner
+# 注：crates.io 包名为 `security-rust`（连字符），代码中 import 为 `security_rust`（下划线）
+security-rust = "1"
+
+# mysql_async：bee_orm 仅提供参数化 SELECT 构建（无执行层），此处补执行与事务。
+# `chrono` feature 使 NaiveDateTime 实现 FromValue（DATETIME 列 → 模型时间字段）。
+# registry 已有 .crate 缓存，可离线编译。
+mysql_async = { version = "0.34", features = ["chrono"] }
+
+[package]
+name = "insurance-service"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.87"
+description = "保险服务平台后端（bee-rust 阶段 0 骨架）"
+authors = ["erik <erik@erik.xyz>"]
+license = "Apache-2.0"
+
+# 特性说明：
+# - `bee_rust` 已于 2026-09-01 激活（本地 path 暂代 git，见 [workspace.dependencies] 注释）。
+# - `rust_scout` 仍在 workspace.dependencies 中声明但暂不激活：crates.io 最新为 0.1.0
+#   （文档写 0.3），且 OpenSearch 未运行，见 docs/backend-architecture.md §10。
+# - 业务模块（models/services/providers/crypto/search/middleware）采用标准 struct + 本地
+#   抽象实现，不依赖 bee_* crate，因此默认构建可完整编译。
+
+[features]
+default = []
+
+[dependencies]
+axum = { workspace = true }
+bee_rust = { workspace = true }
+security-rust = { workspace = true }
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+async-trait = { workspace = true }
+chrono = { workspace = true }
+rust_decimal = { workspace = true }
+jsonwebtoken = { workspace = true }
+regex = { workspace = true }
+base64 = { workspace = true }
+aes-gcm = { workspace = true }
+argon2 = { workspace = true }
+uuid = { workspace = true }
+reqwest = { workspace = true }
+mysql_async = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true }

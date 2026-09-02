@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="560" viewBox="0 0 1000 560" font-family="'PingFang SC','Microsoft YaHei','Noto Sans CJK SC',sans-serif">
+  <defs>
+    <marker id="arrow" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto">
+      <path d="M0,0 L9,4.5 L0,9 Z" fill="#93a0b4"/>
+    </marker>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fbf7ef"/>
+      <stop offset="1" stop-color="#f2ead9"/>
+    </linearGradient>
+  </defs>
+  <rect x="0" y="0" width="1000" height="560" fill="url(#bg)" rx="12"/>
+
+  <text x="500" y="28" text-anchor="middle" font-size="20" font-weight="700" fill="#1f2d3d">保险服务平台 · 请求生命周期（一次 /api/v1 请求）</text>
+
+  <!-- 阶段 1 -->
+  <rect x="30" y="60" width="940" height="76" rx="10" fill="#fff" stroke="#b9c6d6"/>
+  <rect x="30" y="60" width="56" height="76" rx="10" fill="#33485d"/>
+  <rect x="56" y="60" width="30" height="16" fill="#33485d"/>
+  <text x="58" y="106" text-anchor="middle" font-size="22" fill="#fff" font-weight="700" transform="rotate(-90 58 106)">1</text>
+  <text x="110" y="88" font-size="14" font-weight="600" fill="#2b3a4a">接入：bee_rust + axum 路由</text>
+  <text x="110" y="112" font-size="12.5" fill="#5f6f82">客户端请求（App / 小程序 / HarmonyOS / 管理后台）→ 解析路径与方法 /api/v1/…</text>
+  <text x="110" y="130" font-size="12.5" fill="#8a6420">网关层仅暴露 whitelist 路由（routes.rs 数据驱动路由表）；未注册路径 → 404 信封</text>
+
+  <!-- 箭头 -->
+  <line x1="500" y1="140" x2="500" y2="158" stroke="#93a0b4" stroke-width="2.5" marker-end="url(#arrow)"/>
+
+  <!-- 阶段 2 -->
+  <rect x="30" y="162" width="940" height="76" rx="10" fill="#fff" stroke="#e0b36a"/>
+  <rect x="30" y="162" width="56" height="76" rx="10" fill="#8a6420"/>
+  <rect x="56" y="162" width="30" height="16" fill="#8a6420"/>
+  <text x="58" y="208" text-anchor="middle" font-size="22" fill="#fff" font-weight="700" transform="rotate(-90 58 208)">2</text>
+  <text x="110" y="190" font-size="14" font-weight="600" fill="#2b3a4a">中间件过滤器链（依次）</text>
+  <text x="110" y="214" font-size="12.5" fill="#5f6f82">SecurityFilter 入站扫描 → Trace 注入 trace_id → JWT 认证解析 Authorization: Bearer（exp 精确校验）</text>
+  <text x="110" y="232" font-size="12.5" fill="#5f6f82">→ 需要权限的路由再经 RequireRoleFilter 角色守卫；任一步失败 → 401 / 403 信封，不进入业务层</text>
+
+  <!-- 箭头 -->
+  <line x1="500" y1="242" x2="500" y2="260" stroke="#93a0b4" stroke-width="2.5" marker-end="url(#arrow)"/>
+
+  <!-- 阶段 3 -->
+  <rect x="30" y="264" width="940" height="76" rx="10" fill="#fff" stroke="#7fc39a"/>
+  <rect x="30" y="264" width="56" height="76" rx="10" fill="#2e7048"/>
+  <rect x="56" y="264" width="30" height="16" fill="#2e7048"/>
+  <text x="58" y="310" text-anchor="middle" font-size="22" fill="#fff" font-weight="700" transform="rotate(-90 58 310)">3</text>
+  <text x="110" y="292" font-size="14" font-weight="600" fill="#2b3a4a">Controller 分派 → Service 业务逻辑</text>
+  <text x="110" y="316" font-size="12.5" fill="#5f6f82">AuthController / ProductController / SearchController（bee_router 分发），读取请求体 → 校验入参</text>
+  <text x="110" y="334" font-size="12.5" fill="#5f6f82">Service 为事务边界：auth_service · product_service · search_service；规划中的报价/订单/保单/理赔按同一模式落地</text>
+
+  <!-- 箭头 -->
+  <line x1="500" y1="344" x2="500" y2="362" stroke="#93a0b4" stroke-width="2.5" marker-end="url(#arrow)"/>
+
+  <!-- 阶段 4 -->
+  <rect x="30" y="366" width="940" height="76" rx="10" fill="#fff" stroke="#9fb8d4"/>
+  <rect x="30" y="366" width="56" height="76" rx="10" fill="#2f4f74"/>
+  <rect x="56" y="366" width="30" height="16" fill="#2f4f74"/>
+  <text x="58" y="412" text-anchor="middle" font-size="22" fill="#fff" font-weight="700" transform="rotate(-90 58 412)">4</text>
+  <text x="110" y="394" font-size="14" font-weight="600" fill="#2b3a4a">数据访问 &amp; 外部 Provider</text>
+  <text x="110" y="418" font-size="12.5" fill="#5f6f82">Db（mysql_async 连接池）：参数化查询防注入；写事务 with_tx 闭环（成功 commit / 失败 rollback）</text>
+  <text x="110" y="436" font-size="12.5" fill="#5f6f82">支付 / 签约走 Provider 适配层（微信支付 · 支付宝 · 易签 · Mock）——预下单 / 回调验签在规划路由中挂载</text>
+
+  <!-- 箭头 -->
+  <line x1="500" y1="446" x2="500" y2="464" stroke="#93a0b4" stroke-width="2.5" marker-end="url(#arrow)"/>
+
+  <!-- 阶段 5 -->
+  <rect x="30" y="468" width="940" height="70" rx="10" fill="#fff" stroke="#b493e0"/>
+  <rect x="30" y="468" width="56" height="70" rx="10" fill="#643a94"/>
+  <rect x="56" y="468" width="30" height="16" fill="#643a94"/>
+  <text x="58" y="512" text-anchor="middle" font-size="22" fill="#fff" font-weight="700" transform="rotate(-90 58 512)">5</text>
+  <text x="110" y="494" font-size="14" font-weight="600" fill="#2b3a4a">统一响应 → 收尾</text>
+  <text x="110" y="518" font-size="12.5" fill="#5f6f82">ok_response 信封 { code, message, data }（业务成功 code 0，业务错误 40000）→ 透传 trace_id 便于排查</text>
+  <text x="110" y="534" font-size="12.5" fill="#5f6f82">审计点（audit_log / search_sync_log）异步落库受理 → 返回客户端 JSON</text>
+
+  <text x="972" y="544" text-anchor="end" font-size="22" font-weight="600" fill="#8ea0b5" fill-opacity="0.45" transform="rotate(-12 900 552)">https://erik.xyz</text>
+</svg>

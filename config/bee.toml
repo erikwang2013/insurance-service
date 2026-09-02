@@ -1,0 +1,9 @@
+# bee-rust 运行配置（bee_rust server 运行时所需）
+# 详细字段随 bee-rust 仓库 README 对齐；此处为最小可运行占位
+
+[server]
+addr = "0.0.0.0:8080"
+name = "insurance-service"
+
+[log]
+level = "info"

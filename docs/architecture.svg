@@ -1,0 +1,163 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="700" viewBox="0 0 1000 700" font-family="'PingFang SC','Microsoft YaHei','Noto Sans CJK SC',sans-serif">
+  <defs>
+    <marker id="arrow" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto">
+      <path d="M0,0 L9,4.5 L0,9 Z" fill="#93a0b4"/>
+    </marker>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#f7f9fc"/>
+      <stop offset="1" stop-color="#ecf1f7"/>
+    </linearGradient>
+  </defs>
+  <rect x="0" y="0" width="1000" height="700" fill="url(#bg)" rx="12"/>
+
+  <text x="500" y="26" text-anchor="middle" font-size="20" font-weight="700" fill="#1f2d3d">保险服务平台 · 后端系统架构（bee-rust 阶段 0 → 1）</text>
+
+  <!-- ===================== 1. 客户端 ===================== -->
+  <g>
+    <rect x="20" y="42" width="112" height="52" rx="8" fill="#33485d"/>
+    <text x="76" y="74" text-anchor="middle" font-size="14" fill="#fff" font-weight="600">客户端</text>
+    <rect x="150" y="42" width="198" height="52" rx="8" fill="#fff" stroke="#b9c6d6"/>
+    <text x="249" y="74" text-anchor="middle" font-size="14" fill="#2b3a4a">Flutter App</text>
+    <rect x="360" y="42" width="198" height="52" rx="8" fill="#fff" stroke="#b9c6d6"/>
+    <text x="459" y="74" text-anchor="middle" font-size="14" fill="#2b3a4a">微信小程序</text>
+    <rect x="570" y="42" width="198" height="52" rx="8" fill="#fff" stroke="#b9c6d6"/>
+    <text x="669" y="74" text-anchor="middle" font-size="14" fill="#2b3a4a">HarmonyOS App</text>
+    <rect x="780" y="42" width="198" height="52" rx="8" fill="#fff" stroke="#b9c6d6"/>
+    <text x="879" y="74" text-anchor="middle" font-size="14" fill="#2b3a4a">运营管理后台</text>
+  </g>
+
+  <!-- ===================== 2. 接入层 ===================== -->
+  <g>
+    <rect x="20" y="110" width="112" height="52" rx="8" fill="#4a6785"/>
+    <text x="76" y="135" text-anchor="middle" font-size="12" fill="#fff" font-weight="600">HTTP 接入</text>
+    <text x="76" y="152" text-anchor="middle" font-size="11" fill="#dce6f0">bee_rust + axum</text>
+    <rect x="150" y="110" width="198" height="52" rx="8" fill="#eaf2fb" stroke="#8fb2d8"/>
+    <text x="249" y="135" text-anchor="middle" font-size="13" fill="#23507d" font-weight="600">/healthz</text>
+    <text x="249" y="151" text-anchor="middle" font-size="11" fill="#5b7998">健康检查</text>
+    <rect x="360" y="110" width="198" height="52" rx="8" fill="#eaf2fb" stroke="#8fb2d8"/>
+    <text x="459" y="135" text-anchor="middle" font-size="13" fill="#23507d" font-weight="600">/api/v1/auth</text>
+    <text x="459" y="151" text-anchor="middle" font-size="11" fill="#5b7998">注册 · 登录 · 刷新 · 注销</text>
+    <rect x="570" y="110" width="198" height="52" rx="8" fill="#eaf2fb" stroke="#8fb2d8"/>
+    <text x="669" y="135" text-anchor="middle" font-size="13" fill="#23507d" font-weight="600">/api/v1/products</text>
+    <text x="669" y="151" text-anchor="middle" font-size="11" fill="#5b7998">商品列表 · 详情 · 条款</text>
+    <rect x="780" y="110" width="198" height="52" rx="8" fill="#eaf2fb" stroke="#8fb2d8"/>
+    <text x="879" y="135" text-anchor="middle" font-size="13" fill="#23507d" font-weight="600">/api/v1/search</text>
+    <text x="879" y="151" text-anchor="middle" font-size="11" fill="#5b7998">全文搜索</text>
+  </g>
+
+  <!-- ===================== 3. 过滤器链 ===================== -->
+  <g>
+    <rect x="20" y="178" width="112" height="52" rx="8" fill="#4a6785"/>
+    <text x="76" y="203" text-anchor="middle" font-size="12" fill="#fff" font-weight="600">中间件</text>
+    <text x="76" y="220" text-anchor="middle" font-size="11" fill="#dce6f0">过滤器链</text>
+    <rect x="150" y="178" width="176" height="52" rx="8" fill="#fdf3e3" stroke="#e0b36a"/>
+    <text x="238" y="203" text-anchor="middle" font-size="13" fill="#8a6420" font-weight="600">SecurityFilter</text>
+    <text x="238" y="220" text-anchor="middle" font-size="11" fill="#a8863f">安全扫描</text>
+    <line x1="334" y1="204" x2="356" y2="204" stroke="#93a0b4" stroke-width="2" marker-end="url(#arrow)"/>
+    <rect x="366" y="178" width="176" height="52" rx="8" fill="#fdf3e3" stroke="#e0b36a"/>
+    <text x="454" y="203" text-anchor="middle" font-size="13" fill="#8a6420" font-weight="600">Trace</text>
+    <text x="454" y="220" text-anchor="middle" font-size="11" fill="#a8863f">链路追踪 trace_id</text>
+    <line x1="550" y1="204" x2="572" y2="204" stroke="#93a0b4" stroke-width="2" marker-end="url(#arrow)"/>
+    <rect x="582" y="178" width="176" height="52" rx="8" fill="#fdf3e3" stroke="#e0b36a"/>
+    <text x="670" y="203" text-anchor="middle" font-size="13" fill="#8a6420" font-weight="600">JWT 认证</text>
+    <text x="670" y="220" text-anchor="middle" font-size="11" fill="#a8863f">RBAC 角色鉴权</text>
+    <line x1="766" y1="204" x2="788" y2="204" stroke="#93a0b4" stroke-width="2" marker-end="url(#arrow)"/>
+    <rect x="798" y="178" width="180" height="52" rx="8" fill="#fdf3e3" stroke="#e0b36a"/>
+    <text x="888" y="203" text-anchor="middle" font-size="13" fill="#8a6420" font-weight="600">Controller 分派</text>
+    <text x="888" y="220" text-anchor="middle" font-size="11" fill="#a8863f">bee 管线上下文</text>
+  </g>
+
+  <!-- ===================== 4. 控制器层 ===================== -->
+  <g>
+    <rect x="20" y="246" width="112" height="52" rx="8" fill="#4a6785"/>
+    <text x="76" y="271" text-anchor="middle" font-size="12" fill="#fff" font-weight="600">Controller</text>
+    <text x="76" y="288" text-anchor="middle" font-size="11" fill="#dce6f0">bee_router</text>
+    <rect x="150" y="246" width="198" height="52" rx="8" fill="#e8f5ec" stroke="#7fc39a"/>
+    <text x="249" y="271" text-anchor="middle" font-size="13" fill="#2e7048" font-weight="600">AuthController</text>
+    <text x="249" y="288" text-anchor="middle" font-size="11" fill="#5d9475">注册 · 登录 · 刷新</text>
+    <rect x="360" y="246" width="198" height="52" rx="8" fill="#e8f5ec" stroke="#7fc39a"/>
+    <text x="459" y="271" text-anchor="middle" font-size="13" fill="#2e7048" font-weight="600">ProductController</text>
+    <text x="459" y="288" text-anchor="middle" font-size="11" fill="#5d9475">商品详情 · 条款</text>
+    <rect x="570" y="246" width="198" height="52" rx="8" fill="#e8f5ec" stroke="#7fc39a"/>
+    <text x="669" y="271" text-anchor="middle" font-size="13" fill="#2e7048" font-weight="600">SearchController</text>
+    <text x="669" y="288" text-anchor="middle" font-size="11" fill="#5d9475">搜索请求</text>
+    <rect x="780" y="246" width="198" height="52" rx="8" fill="#e8f5ec" stroke="#7fc39a"/>
+    <text x="879" y="271" text-anchor="middle" font-size="13" fill="#2e7048" font-weight="600">公共基础设施</text>
+    <text x="879" y="288" text-anchor="middle" font-size="11" fill="#5d9475">会话缓存 · 模板 · 信封</text>
+  </g>
+
+  <!-- ===================== 5. 服务层 ===================== -->
+  <g>
+    <rect x="20" y="314" width="112" height="52" rx="8" fill="#4a6785"/>
+    <text x="76" y="339" text-anchor="middle" font-size="12" fill="#fff" font-weight="600">Service</text>
+    <text x="76" y="356" text-anchor="middle" font-size="11" fill="#dce6f0">事务边界</text>
+    <rect x="150" y="314" width="198" height="52" rx="8" fill="#f1e8fa" stroke="#b493e0"/>
+    <text x="249" y="339" text-anchor="middle" font-size="13" fill="#643a94" font-weight="600">auth_service</text>
+    <text x="249" y="356" text-anchor="middle" font-size="11" fill="#8a6cb6">账号 · 密码哈希 · 令牌</text>
+    <rect x="360" y="314" width="198" height="52" rx="8" fill="#f1e8fa" stroke="#b493e0"/>
+    <text x="459" y="339" text-anchor="middle" font-size="13" fill="#643a94" font-weight="600">product_service</text>
+    <text x="459" y="356" text-anchor="middle" font-size="11" fill="#8a6cb6">商品列表 · 详情</text>
+    <rect x="570" y="314" width="198" height="52" rx="8" fill="#f1e8fa" stroke="#b493e0"/>
+    <text x="669" y="339" text-anchor="middle" font-size="13" fill="#643a94" font-weight="600">search_service</text>
+    <text x="669" y="356" text-anchor="middle" font-size="11" fill="#8a6cb6">搜索（LIKE 降级）</text>
+    <rect x="780" y="314" width="198" height="52" rx="8" fill="#f1e8fa" stroke="#b493e0"/>
+    <text x="879" y="339" text-anchor="middle" font-size="13" fill="#643a94" font-weight="600">（规划）</text>
+    <text x="879" y="356" text-anchor="middle" font-size="11" fill="#8a6cb6">报价 · 订单 · 保单 · 理赔</text>
+  </g>
+
+  <!-- ===================== 6. 外部 Provider ===================== -->
+  <g>
+    <rect x="20" y="382" width="112" height="52" rx="8" fill="#5b6b7b"/>
+    <text x="76" y="407" text-anchor="middle" font-size="12" fill="#fff" font-weight="600">外部 Provider</text>
+    <text x="76" y="424" text-anchor="middle" font-size="11" fill="#d5dce4">适配层</text>
+    <rect x="150" y="382" width="198" height="52" rx="8" fill="#fff6f6" stroke="#e3a3a3"/>
+    <text x="249" y="407" text-anchor="middle" font-size="13" fill="#963b3b" font-weight="600">微信支付</text>
+    <text x="249" y="424" text-anchor="middle" font-size="11" fill="#b06b6b">支付预下单 · 回调</text>
+    <rect x="360" y="382" width="198" height="52" rx="8" fill="#fff6f6" stroke="#e3a3a3"/>
+    <text x="459" y="407" text-anchor="middle" font-size="13" fill="#963b3b" font-weight="600">支付宝</text>
+    <text x="459" y="424" text-anchor="middle" font-size="11" fill="#b06b6b">支付接入（规划）</text>
+    <rect x="570" y="382" width="198" height="52" rx="8" fill="#fff6f6" stroke="#e3a3a3"/>
+    <text x="669" y="407" text-anchor="middle" font-size="13" fill="#963b3b" font-weight="600">易签电子签约</text>
+    <text x="669" y="424" text-anchor="middle" font-size="11" fill="#b06b6b">合同签署 · 签署回调</text>
+    <rect x="780" y="382" width="198" height="52" rx="8" fill="#fff6f6" stroke="#e3a3a3"/>
+    <text x="879" y="407" text-anchor="middle" font-size="13" fill="#963b3b" font-weight="600">Mock 模拟</text>
+    <text x="879" y="424" text-anchor="middle" font-size="11" fill="#b06b6b">本地开发 / 测试</text>
+  </g>
+
+  <!-- ===================== 7. 数据访问层 ===================== -->
+  <g>
+    <rect x="20" y="450" width="112" height="52" rx="8" fill="#33485d"/>
+    <text x="76" y="475" text-anchor="middle" font-size="12" fill="#fff" font-weight="600">数据访问</text>
+    <text x="76" y="492" text-anchor="middle" font-size="11" fill="#c7d4e0">DB 层</text>
+    <rect x="150" y="450" width="828" height="52" rx="8" fill="#eef4fb" stroke="#9fb8d4"/>
+    <text x="564" y="472" text-anchor="middle" font-size="13" fill="#2f4f74" font-weight="600">Db · mysql_async 连接池</text>
+    <text x="564" y="490" text-anchor="middle" font-size="12" fill="#55749a">参数化查询（防注入） · 事务闭环 commit / rollback · bee_orm Model 行 → 结构体映射</text>
+  </g>
+
+  <!-- ===================== 8. 基础设施 ===================== -->
+  <g>
+    <rect x="20" y="518" width="112" height="64" rx="8" fill="#1f2d3d"/>
+    <text x="76" y="544" text-anchor="middle" font-size="12" fill="#fff" font-weight="600">基础设施</text>
+    <text x="76" y="561" text-anchor="middle" font-size="11" fill="#aebfcf">存储 / 索引 / 缓存</text>
+    <rect x="150" y="518" width="240" height="64" rx="8" fill="#fff" stroke="#b9c6d6"/>
+    <text x="270" y="540" text-anchor="middle" font-size="13" fill="#2b3a4a" font-weight="600">MySQL 8.4</text>
+    <text x="270" y="556" text-anchor="middle" font-size="11" fill="#7b8ba0">业务库（install.sql）</text>
+    <text x="270" y="571" text-anchor="middle" font-size="11" fill="#7b8ba0">users / products / orders / policies…</text>
+    <rect x="402" y="518" width="240" height="64" rx="8" fill="#fff" stroke="#b9c6d6"/>
+    <text x="522" y="540" text-anchor="middle" font-size="13" fill="#2b3a4a" font-weight="600">Redis</text>
+    <text x="522" y="556" text-anchor="middle" font-size="11" fill="#7b8ba0">会话缓存 bee_cache</text>
+    <text x="522" y="571" text-anchor="middle" font-size="11" fill="#7b8ba0">（阶段 0 内存缓存暂代）</text>
+    <rect x="654" y="518" width="324" height="64" rx="8" fill="#fff" stroke="#b9c6d6"/>
+    <text x="816" y="540" text-anchor="middle" font-size="13" fill="#2b3a4a" font-weight="600">OpenSearch 全文索引</text>
+    <text x="816" y="556" text-anchor="middle" font-size="11" fill="#7b8ba0">rust-scout 门面（elasticsearch 特性）</text>
+    <text x="816" y="571" text-anchor="middle" font-size="11" fill="#7b8ba0">未就绪时降级 MySQL 的 LIKE 搜索 + 同步 Worker</text>
+  </g>
+
+  <!-- 说明文字 -->
+  <text x="20" y="610" font-size="11.5" fill="#5f6f82">说明：阶段 0→1 已落地 认证 / 商品 / 搜索 三组路由与控制器；</text>
+  <text x="20" y="628" font-size="11.5" fill="#5f6f82">报价、订单、支付、保单、电子签约、理赔、管理后台 API 已在数据驱动路由表（src/routes.rs）中规划，按同一模式逐步挂载。</text>
+
+  <!-- 水印 -->
+  <text x="972" y="672" text-anchor="end" font-size="22" font-weight="600" fill="#8ea0b5" fill-opacity="0.45" transform="rotate(-12 900 680)">https://erik.xyz</text>
+</svg>
