@@ -15,7 +15,7 @@
 | 存储 | MySQL 8.4（业务库）· Redis / 内存缓存（会话）· OpenSearch（搜索，可选） |
 
 <p align="center">
-  <img src="docs/mascot.svg" width="120" height="120" alt="吉祥物安安" />
+  <img src="docs/mascot.svg" width="120" height="120" alt="吉祥物安安——守护熊猫" />
 </p>
 
 ---

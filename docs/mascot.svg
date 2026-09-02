@@ -1,64 +1,81 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400" role="img" aria-label="安安，保险服务平台吉祥物">
-  <!-- 背景柔光圈 -->
-  <circle cx="200" cy="200" r="176" fill="#EAF3FF"/>
-  <circle cx="200" cy="200" r="150" fill="#F4F9FF"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400" role="img" aria-label="安安，保险服务平台吉祥物——守护熊猫">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#5B8DEF"/>
+      <stop offset="1" stop-color="#3B6FD4"/>
+    </linearGradient>
+    <linearGradient id="scarf" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#FF8C33"/>
+      <stop offset="1" stop-color="#E8721F"/>
+    </linearGradient>
+  </defs>
 
-  <!-- 小脚（下方两枚） -->
-  <ellipse cx="168" cy="366" rx="26" ry="14" fill="#2E6FC9"/>
-  <ellipse cx="232" cy="366" rx="26" ry="14" fill="#2E6FC9"/>
+  <!-- 背景：柔和渐变蓝 -->
+  <circle cx="200" cy="200" r="188" fill="url(#bg)"/>
+  <circle cx="200" cy="200" r="150" fill="#FFFFFF" opacity="0.06"/>
 
-  <!-- 安全帽（保护伞意象：橙色的“安”，护住头顶） -->
-  <path d="M160 96 Q200 28 240 96 L240 104 Q200 80 160 104 Z" fill="#FFB02E"/>
-  <rect x="150" y="92" width="100" height="14" rx="7" fill="#FFA014"/>
+  <!-- ===== 耳朵（先画，被头盖住底边） ===== -->
+  <circle cx="130" cy="118" r="36" fill="#20242E"/>
+  <circle cx="270" cy="118" r="36" fill="#20242E"/>
+  <circle cx="130" cy="118" r="16" fill="#FFD9E0"/>
+  <circle cx="270" cy="118" r="16" fill="#FFD9E0"/>
 
-  <!-- 小手臂 -->
-  <circle cx="108" cy="225" r="15" fill="#2E6FC9"/>
-  <circle cx="292" cy="225" r="15" fill="#2E6FC9"/>
+  <!-- ===== 身体（被头盖住顶部） ===== -->
+  <ellipse cx="200" cy="330" rx="86" ry="78" fill="#FFFFFF"/>
 
-  <!-- 盾牌主体（保险保障意象：盾） -->
-  <path d="M200 62
-           C 258 62 300 104 310 160
-           L 310 242
-           C 310 292 268 334 200 362
-           C 132 334 90 292 90 242
-           L 90 160
-           C 100 104 142 62 200 62 Z"
-        fill="#2E6FC9"/>
+  <!-- ===== 左手臂（抱在胸前） ===== -->
+  <g transform="rotate(14 122 312)">
+    <ellipse cx="122" cy="312" rx="26" ry="50" fill="#20242E"/>
+  </g>
+  <!-- 右手臂 -->
+  <g transform="rotate(-14 278 312)">
+    <ellipse cx="278" cy="312" rx="26" ry="50" fill="#20242E"/>
+  </g>
 
-  <!-- 盾面（内侧白色，蓝色描边自然形成盾缘） -->
-  <path d="M200 62
-           C 258 62 300 104 310 160
-           L 310 242
-           C 310 292 268 334 200 362
-           C 132 334 90 292 90 242
-           L 90 160
-           C 100 104 142 62 200 62 Z"
-        transform="translate(200,200) scale(0.74) translate(-200,-200)"
-        fill="#FFFFFF"/>
+  <!-- 围巾（围在脖子处，唯一装饰） -->
+  <path d="M118 262 Q200 298 282 262 L288 284 Q200 316 112 284 Z"
+        fill="url(#scarf)"/>
+  <!-- 围巾飘带（右侧垂下一截） -->
+  <path d="M252 288 L258 358 Q259 366 250 366 L240 366 Q231 366 232 358 L236 288 Z"
+        fill="#E8721F"/>
+  <line x1="236" y1="312" x2="258" y2="312" stroke="#FFB25E" stroke-width="4"/>
+  <line x1="236" y1="330" x2="258" y2="330" stroke="#FFB25E" stroke-width="4"/>
+  <path d="M240 366 L236 376" stroke="#E8721F" stroke-width="5" stroke-linecap="round"/>
+  <path d="M250 366 L254 376" stroke="#E8721F" stroke-width="5" stroke-linecap="round"/>
 
-  <!-- 眼睛 -->
-  <circle cx="166" cy="182" r="16" fill="#26293A"/>
-  <circle cx="234" cy="182" r="16" fill="#26293A"/>
-  <circle cx="171" cy="176" r="5.5" fill="#FFFFFF"/>
-  <circle cx="239" cy="176" r="5.5" fill="#FFFFFF"/>
+  <!-- ===== 双脚 ===== -->
+  <ellipse cx="162" cy="392" rx="34" ry="16" fill="#20242E"/>
+  <ellipse cx="238" cy="392" rx="34" ry="16" fill="#20242E"/>
+
+  <!-- ===== 头（大头萌感） ===== -->
+  <ellipse cx="200" cy="196" rx="92" ry="86" fill="#FFFFFF"/>
+
+  <!-- 眼斑（减少倾斜，去掉凶感） -->
+  <ellipse cx="160" cy="196" rx="24" ry="28" fill="#20242E" transform="rotate(-8 160 196)"/>
+  <ellipse cx="240" cy="196" rx="24" ry="28" fill="#20242E" transform="rotate(8 240 196)"/>
+
+  <!-- 眼白（圆润大眼睛） -->
+  <circle cx="161" cy="193" r="13.5" fill="#FFFFFF"/>
+  <circle cx="239" cy="193" r="13.5" fill="#FFFFFF"/>
+
+  <!-- 瞳孔（略朝内下方，萌感视线） -->
+  <circle cx="165" cy="196" r="8" fill="#1A1A1A"/>
+  <circle cx="235" cy="196" r="8" fill="#1A1A1A"/>
+
+  <!-- 双高光（大高光+小星点） -->
+  <circle cx="162" cy="193" r="3.6" fill="#FFFFFF"/>
+  <circle cx="168.5" cy="200" r="1.7" fill="#FFFFFF"/>
+  <circle cx="238" cy="193" r="3.6" fill="#FFFFFF"/>
+  <circle cx="231.5" cy="200" r="1.7" fill="#FFFFFF"/>
+
+  <!-- 鼻子 -->
+  <ellipse cx="200" cy="226" rx="9" ry="6.5" fill="#20242E"/>
+
+  <!-- 嘴（ω 微笑，上扬显开心） -->
+  <path d="M184 239 Q192 249 200 240 Q208 249 216 239" stroke="#20242E"
+        stroke-width="4" fill="none" stroke-linecap="round"/>
 
   <!-- 腮红 -->
-  <ellipse cx="140" cy="202" rx="16" ry="9" fill="#FFB3C1" opacity="0.85"/>
-  <ellipse cx="260" cy="202" rx="16" ry="9" fill="#FFB3C1" opacity="0.85"/>
-
-  <!-- 微笑 -->
-  <path d="M185 202 Q200 218 215 202" stroke="#26293A" stroke-width="5" fill="none"
-        stroke-linecap="round"/>
-
-  <!-- 胸前爱心（保险 = 有温度的保障） -->
-  <path d="M200 250
-           C 200 246 178 232 178 244
-           C 178 252 196 260 200 264
-           C 204 260 222 252 222 244
-           C 222 232 200 246 200 250 Z"
-        fill="#FF6B81"/>
-
-  <!-- 盾缘高光弧 -->
-  <path d="M126 130 Q118 150 116 168" stroke="#A8CCF2" stroke-width="6" fill="none"
-        stroke-linecap="round" opacity="0.8"/>
+  <ellipse cx="132" cy="222" rx="15" ry="9" fill="#FF9AA8" opacity="0.75"/>
+  <ellipse cx="268" cy="222" rx="15" ry="9" fill="#FF9AA8" opacity="0.75"/>
 </svg>
