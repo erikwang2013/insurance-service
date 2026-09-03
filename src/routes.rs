@@ -281,7 +281,7 @@ use crate::controllers::{AppState, auth_handler, product_handler, search_handler
 pub fn build_bee_router(state: AppState) -> axum::Router {
     let router = Router::new()
         .ns("/api/v1", |api| {
-            api.get("/healthz", healthz_handler)
+            api
                 // auth
                 .post("/auth/register", auth_handler)
                 .post("/auth/login", auth_handler)
@@ -297,14 +297,15 @@ pub fn build_bee_router(state: AppState) -> axum::Router {
                 .get("/search", search_handler)
         })
         .build();
-    // 吉祥物 favicon：根路径 /favicon.svg（浏览器 / 前端直接引用）
+    // 吉祥物 favicon + 健康检查：根路径（浏览器 / 前端直接引用）
     axum::Router::<AppState>::new()
+        .route("/healthz", axum::routing::get(healthz_handler))
         .route("/favicon.svg", axum::routing::get(favicon_svg))
         .merge(router)
         .with_state(state)
 }
 
-/// /healthz axum 处理器（bee Router 的 handler 为普通 axum handler）
-async fn healthz_handler() -> axum::Json<serde_json::Value> {
-    axum::Json(healthz())
+/// /healthz axum 处理器，返回统一 ResponseEnvelope。
+async fn healthz_handler() -> axum::Json<crate::response::ResponseEnvelope<serde_json::Value>> {
+    axum::Json(crate::response::ResponseEnvelope::ok(healthz()))
 }

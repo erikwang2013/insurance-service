@@ -63,3 +63,28 @@ pub fn jwt_cfg(access_expiry: i64) -> insurance_service::config::JwtConfig {
 pub fn crypto() -> insurance_service::crypto::CryptoService {
     insurance_service::crypto::CryptoService::from_key(&[7u8; 32]).expect("固定密钥构造")
 }
+
+/// 独立建一个连接池，用于清理测试插入的行（与 app 共享同一 DATABASE_URL）。
+/// 清理失败不向上冒泡（测试收尾容错）。
+pub async fn delete_user_by_conn(db_url: &str, username: &str) {
+    let db = match Db::new(&DbConfig { url: db_url.to_string() }) {
+        Ok(d) => d,
+        Err(_) => return,
+    };
+    let _ = db
+        .exec_drop("DELETE FROM users WHERE username = ?", vec![username])
+        .await;
+}
+
+pub async fn delete_product_by_conn(db_url: &str, product_code: &str) {
+    let db = match Db::new(&DbConfig { url: db_url.to_string() }) {
+        Ok(d) => d,
+        Err(_) => return,
+    };
+    let _ = db
+        .exec_drop(
+            "DELETE FROM insurance_products WHERE product_code = ?",
+            vec![product_code],
+        )
+        .await;
+}

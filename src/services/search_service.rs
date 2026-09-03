@@ -72,6 +72,7 @@ impl SearchService {
         size: u32,
     ) -> Result<SearchResult> {
         let size = size.clamp(1, 100) as usize;
+        let page_echo = page;
         let page = page.max(1) as usize;
         let offset = (page - 1) * size;
         let kw = format!("%{keyword}%");
@@ -117,7 +118,7 @@ impl SearchService {
         Ok(SearchResult {
             hits,
             total,
-            page: page as u32,
+            page: page_echo,
             size: size as u32,
         })
     }

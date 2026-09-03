@@ -60,8 +60,8 @@ else
   NOTES="$(git log --oneline "${PREV}..HEAD" | sed 's/^[ \t]*//' | sed '/^$/d' | head -30 || true)"
   [[ -z "$NOTES" ]] && NOTES="发布 ${TAG}"
   run gh release create "$TAG" \
-    --title "insurance-service ${TAG}" \
-    --notes "$(printf '保险服务平台后端 %s\n\n%s' "${TAG}" "$NOTES")"
+    --title "${TAG}" \
+    --notes "$(printf '%s\n\n%s' "${TAG}" "$NOTES")"
 fi
 
 echo "==> 完成: ${TAG} 已发布（本地 tag + GitHub release）"
