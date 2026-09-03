@@ -44,7 +44,7 @@
   <text x="58" y="310" text-anchor="middle" font-size="22" fill="#fff" font-weight="700" transform="rotate(-90 58 310)">3</text>
   <text x="110" y="292" font-size="14" font-weight="600" fill="#2b3a4a">Controller 分派 → Service 业务逻辑</text>
   <text x="110" y="316" font-size="12.5" fill="#5f6f82">AuthController / ProductController / SearchController（bee_router 分发），读取请求体 → 校验入参</text>
-  <text x="110" y="334" font-size="12.5" fill="#5f6f82">Service 为事务边界：auth_service · product_service · search_service；规划中的报价/订单/保单/理赔按同一模式落地</text>
+  <text x="110" y="334" font-size="12.5" fill="#5f6f82">Service 为事务边界：auth · product · search · quote · order · payment · policy · contract · claim（业务模块已全部落地）</text>
 
   <!-- 箭头 -->
   <line x1="500" y1="344" x2="500" y2="362" stroke="#93a0b4" stroke-width="2.5" marker-end="url(#arrow)"/>
@@ -56,7 +56,7 @@
   <text x="58" y="412" text-anchor="middle" font-size="22" fill="#fff" font-weight="700" transform="rotate(-90 58 412)">4</text>
   <text x="110" y="394" font-size="14" font-weight="600" fill="#2b3a4a">数据访问 &amp; 外部 Provider</text>
   <text x="110" y="418" font-size="12.5" fill="#5f6f82">Db（mysql_async 连接池）：参数化查询防注入；写事务 with_tx 闭环（成功 commit / 失败 rollback）</text>
-  <text x="110" y="436" font-size="12.5" fill="#5f6f82">支付 / 签约走 Provider 适配层（微信支付 · 支付宝 · 易签 · Mock）——预下单 / 回调验签在规划路由中挂载</text>
+  <text x="110" y="436" font-size="12.5" fill="#5f6f82">支付 / 签约走 Provider 适配层（当前 Mock 渠道）——预下单 / 回调验签已挂载（微信支付 / 支付宝 / 易签真实渠道规划中）</text>
 
   <!-- 箭头 -->
   <line x1="500" y1="446" x2="500" y2="464" stroke="#93a0b4" stroke-width="2.5" marker-end="url(#arrow)"/>
@@ -68,7 +68,7 @@
   <text x="58" y="512" text-anchor="middle" font-size="22" fill="#fff" font-weight="700" transform="rotate(-90 58 512)">5</text>
   <text x="110" y="494" font-size="14" font-weight="600" fill="#2b3a4a">统一响应 → 收尾</text>
   <text x="110" y="518" font-size="12.5" fill="#5f6f82">ok_response 信封 { code, message, data }（业务成功 code 0，业务错误 40000）→ 透传 trace_id 便于排查</text>
-  <text x="110" y="534" font-size="12.5" fill="#5f6f82">审计点（audit_log / search_sync_log）异步落库受理 → 返回客户端 JSON</text>
+  <text x="110" y="534" font-size="12.5" fill="#5f6f82">审计点（audit_logs / search_sync_log）异步落库受理 → 返回客户端 JSON</text>
 
   <text x="972" y="544" text-anchor="end" font-size="22" font-weight="600" fill="#8ea0b5" fill-opacity="0.45" transform="rotate(-12 900 552)">https://erik.xyz</text>
 </svg>

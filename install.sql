@@ -454,7 +454,7 @@ CREATE TABLE audit_logs (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ============================================================
--- 15. claim_documents 理赔资料（v1.6.0 C3）
+-- 18. claim_documents 理赔资料（v1.6.0 C3）
 -- ============================================================
 CREATE TABLE claim_documents (
   id         BIGINT UNSIGNED NOT NULL PRIMARY KEY, -- snowflake 主键,应用层 idgen_rs 生成
@@ -468,7 +468,7 @@ CREATE TABLE claim_documents (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ============================================================
--- 16. quote_rates 报价费率表（v1.6.0 C4，整期保费系数 premium=保额×rate）
+-- 19. quote_rates 报价费率表（v1.6.0 C4，整期保费系数 premium=保额×rate）
 -- ============================================================
 CREATE TABLE quote_rates (
   id          BIGINT UNSIGNED NOT NULL PRIMARY KEY, -- snowflake 主键,应用层 idgen_rs 生成

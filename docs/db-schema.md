@@ -1,6 +1,6 @@
 # 保险服务平台 — MySQL 数据库 Schema 与领域模型规划
 
-> 版本: v1.0 | 日期: 2026-09-01 | 状态: 待评审
+> 版本: v1.7 | 日期: 2026-09-04 | 状态: 待评审
 > 适用: 后端 `bee-rust` + `bee_orm #[derive(Model)]`(feature `mysql`) + MySQL 8
 > 搜索: OpenSearch + rust-scout(业务模型实现 `Searchable` trait 同步索引)
 > 说明: 本文档为 `install.sql` 与 Rust `models/` 的编写蓝本;所有枚举采用**稳定大写字符串**(对齐前端已约定的 `order.status = "PENDING"|"PAID"|"CANCELLED"` 语义)。
@@ -30,7 +30,7 @@
 4. **软删除与审计**:核心业务表保留 `deleted_at`(软删除)+ `audit_logs` 全量操作审计。
 5. **搜索解耦**:业务写入只落 MySQL;OpenSearch 索引通过 `search_sync_logs` 做**异步最终一致同步**(详见 §9),不阻塞主事务。
 6. **敏感数据加密**:身份证号、手机号、银行卡号等做**字段级加密**存储(详见 §8),明文绝不直接落库。
-7. **主键**:全部 `BIGINT UNSIGNED AUTO_INCREMENT`;业务号(保单号、订单号、合同号)独立生成并唯一索引,便于对外展示与搜索。
+7. **主键**:全部 `BIGINT UNSIGNED NOT NULL`,由应用层 `idgen_rs`(snowflake 算法,无锁生成)写入,不再依赖库自增;worker_id 经 `IDGEN_WORKER_ID` 环境变量配置,多实例部署须保证各实例 worker_id 唯一。业务号(保单号、订单号、合同号)独立生成并唯一索引,便于对外展示与搜索。
 
 ---
 
@@ -58,6 +58,9 @@ contracts 1──N contract_signers(签署方)
 
 orders 1──N claims(理赔挂订单/保单)
 policies 1──N claims
+claims 1──N claim_documents(理赔资料文件)
+
+insurance_products 1──N quote_rates(费率:整期保费=保额×rate)
 
 所有业务写入 → search_sync_logs(同步队列)
 所有关键操作 → audit_logs(审计)
@@ -86,6 +89,8 @@ policies 1──N claims
 | 15 | `claims` | 理赔 | orders, policies |
 | 16 | `search_sync_logs` | DB→OpenSearch 同步队列 | — |
 | 17 | `audit_logs` | 操作审计 | — |
+| 18 | `claim_documents` | 理赔资料(文件索引) | claims |
+| 19 | `quote_rates` | 报价费率表(整期保费=保额×rate) | insurance_products |
 
 ---
 
@@ -106,7 +111,7 @@ USE insurance_service;
 -- 1. users 用户账户
 -- ============================================================
 CREATE TABLE users (
-  id            BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  id            BIGINT UNSIGNED NOT NULL PRIMARY KEY, -- snowflake 主键,应用层 idgen_rs 生成
   username      VARCHAR(64)  NOT NULL,
   -- 以下两个敏感字段存储加密密文(见 §8),普通长度不足以放 AES 密文,故用 TEXT
   phone_enc     VARBINARY(512)  NULL,      -- 手机号 AES 密文
@@ -123,7 +128,11 @@ CREATE TABLE users (
   updated_at    DATETIME(3)   NOT NULL DEFAULT CURRENT_TIMESTAMP(3)
                            ON UPDATE CURRENT_TIMESTAMP(3),
   deleted_at    DATETIME(3)   NULL,
+  openid        VARCHAR(64)   NULL,          -- 微信 openid(v1.6.0 绑定闭环)
+  unionid       VARCHAR(64)   NULL,          -- 微信 unionid
+  token_version INT           NOT NULL DEFAULT 0,  -- 令牌版本:logout/改密/换绑 +1 吊销旧 refresh
   UNIQUE KEY uk_username (username),
+  UNIQUE KEY uk_openid (openid),
   KEY idx_phone_masked (phone_masked)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 ```
@@ -133,7 +142,7 @@ CREATE TABLE users (
 -- 2. policy_holders 被保人档案
 -- ============================================================
 CREATE TABLE policy_holders (
-  id            BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  id            BIGINT UNSIGNED NOT NULL PRIMARY KEY, -- snowflake 主键,应用层 idgen_rs 生成
   user_id       BIGINT UNSIGNED NULL,        -- 关联投保人账户;为他人投保时为 NULL
   name          VARCHAR(64)   NOT NULL,      -- 被保人姓名
   id_card_enc   VARBINARY(1024) NULL,        -- 身份证密文
@@ -156,7 +165,7 @@ CREATE TABLE policy_holders (
 -- 3. insurance_products 保险产品
 -- ============================================================
 CREATE TABLE insurance_products (
-  id               BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  id               BIGINT UNSIGNED NOT NULL PRIMARY KEY, -- snowflake 主键,应用层 idgen_rs 生成
   product_code     VARCHAR(64)   NOT NULL,        -- 产品编码,对外唯一
   name             VARCHAR(128)  NOT NULL,
   subtitle         VARCHAR(255)  NULL,            -- 副标题/卖点
@@ -191,7 +200,7 @@ CREATE TABLE insurance_products (
 -- 4. insurance_product_clauses 产品条款
 -- ============================================================
 CREATE TABLE insurance_product_clauses (
-  id          BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  id          BIGINT UNSIGNED NOT NULL PRIMARY KEY, -- snowflake 主键,应用层 idgen_rs 生成
   product_id  BIGINT UNSIGNED NOT NULL,
   clause_type VARCHAR(32)   NOT NULL,   -- MAIN/EXCLUSION/WAIVER/RIDER/OBLIGATION
   title       VARCHAR(255)  NOT NULL,
@@ -213,7 +222,7 @@ CREATE TABLE insurance_product_clauses (
 -- 5. insurance_product_categories 产品分类(树)
 -- ============================================================
 CREATE TABLE insurance_product_categories (
-  id          BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  id          BIGINT UNSIGNED NOT NULL PRIMARY KEY, -- snowflake 主键,应用层 idgen_rs 生成
   parent_id   BIGINT UNSIGNED NULL,     -- 父分类,根为 NULL
   name        VARCHAR(64)   NOT NULL,
   slug        VARCHAR(64)   NOT NULL,
@@ -230,7 +239,7 @@ CREATE TABLE insurance_product_categories (
 -- 6. insurance_product_category_rel 产品-分类(多对多)
 -- ============================================================
 CREATE TABLE insurance_product_category_rel (
-  id          BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  id          BIGINT UNSIGNED NOT NULL PRIMARY KEY, -- snowflake 主键,应用层 idgen_rs 生成
   product_id  BIGINT UNSIGNED NOT NULL,
   category_id BIGINT UNSIGNED NOT NULL,
   created_at  DATETIME(3)   NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
@@ -248,7 +257,7 @@ CREATE TABLE insurance_product_category_rel (
 -- 7. quotes 报价 / 投保方案
 -- ============================================================
 CREATE TABLE quotes (
-  id                 BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  id                 BIGINT UNSIGNED NOT NULL PRIMARY KEY, -- snowflake 主键,应用层 idgen_rs 生成
   quote_no           VARCHAR(32)   NOT NULL,          -- 报价单号
   product_id         BIGINT UNSIGNED NOT NULL,
   user_id            BIGINT UNSIGNED NOT NULL,        -- 投保人账户
@@ -286,7 +295,7 @@ CREATE TABLE quotes (
 -- 8. quotes_beneficiaries 报价期受益人快照
 -- ============================================================
 CREATE TABLE quotes_beneficiaries (
-  id           BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  id           BIGINT UNSIGNED NOT NULL PRIMARY KEY, -- snowflake 主键,应用层 idgen_rs 生成
   quote_id     BIGINT UNSIGNED NOT NULL,
   name         VARCHAR(64)   NOT NULL,
   id_card_enc  VARBINARY(1024) NULL,
@@ -304,7 +313,7 @@ CREATE TABLE quotes_beneficiaries (
 -- 9. orders 订单
 -- ============================================================
 CREATE TABLE orders (
-  id            BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  id            BIGINT UNSIGNED NOT NULL PRIMARY KEY, -- snowflake 主键,应用层 idgen_rs 生成
   order_no      VARCHAR(32)   NOT NULL,             -- 订单号
   quote_id      BIGINT UNSIGNED NOT NULL,
   user_id       BIGINT UNSIGNED NOT NULL,           -- 下单人
@@ -341,7 +350,7 @@ CREATE TABLE orders (
 -- 10. payments 支付流水
 -- ============================================================
 CREATE TABLE payments (
-  id              BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  id              BIGINT UNSIGNED NOT NULL PRIMARY KEY, -- snowflake 主键,应用层 idgen_rs 生成
   payment_no      VARCHAR(32)   NOT NULL,            -- 支付流水号
   order_id        BIGINT UNSIGNED NOT NULL,
   user_id         BIGINT UNSIGNED NOT NULL,
@@ -375,7 +384,7 @@ CREATE TABLE payments (
 -- 11. policies 保单
 -- ============================================================
 CREATE TABLE policies (
-  id                  BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  id                  BIGINT UNSIGNED NOT NULL PRIMARY KEY, -- snowflake 主键,应用层 idgen_rs 生成
   policy_no           VARCHAR(32)   NOT NULL,          -- 保单号,对外展示
   order_id            BIGINT UNSIGNED NOT NULL,
   quote_id            BIGINT UNSIGNED NOT NULL,
@@ -417,7 +426,7 @@ CREATE TABLE policies (
 -- 12. policy_beneficiaries 保单受益人(占比)
 -- ============================================================
 CREATE TABLE policy_beneficiaries (
-  id           BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  id           BIGINT UNSIGNED NOT NULL PRIMARY KEY, -- snowflake 主键,应用层 idgen_rs 生成
   policy_id    BIGINT UNSIGNED NOT NULL,
   name         VARCHAR(64)   NOT NULL,
   id_card_enc  VARBINARY(1024) NULL,
@@ -436,7 +445,7 @@ CREATE TABLE policy_beneficiaries (
 -- 13. contracts 电子合同
 -- ============================================================
 CREATE TABLE contracts (
-  id            BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  id            BIGINT UNSIGNED NOT NULL PRIMARY KEY, -- snowflake 主键,应用层 idgen_rs 生成
   contract_no   VARCHAR(32)   NOT NULL,             -- 合同号
   policy_id     BIGINT UNSIGNED NOT NULL,
   order_id      BIGINT UNSIGNED NOT NULL,
@@ -465,7 +474,7 @@ CREATE TABLE contracts (
 -- 14. contract_signers 合同签署方
 -- ============================================================
 CREATE TABLE contract_signers (
-  id            BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  id            BIGINT UNSIGNED NOT NULL PRIMARY KEY, -- snowflake 主键,应用层 idgen_rs 生成
   contract_id   BIGINT UNSIGNED NOT NULL,
   user_id       BIGINT UNSIGNED NULL,               -- 登录用户签署
   name          VARCHAR(64)   NOT NULL,             -- 签署人姓名
@@ -491,7 +500,7 @@ CREATE TABLE contract_signers (
 -- 15. claims 理赔
 -- ============================================================
 CREATE TABLE claims (
-  id              BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  id              BIGINT UNSIGNED NOT NULL PRIMARY KEY, -- snowflake 主键,应用层 idgen_rs 生成
   claim_no        VARCHAR(32)   NOT NULL,            -- 理赔单号
   policy_id       BIGINT UNSIGNED NOT NULL,
   order_id        BIGINT UNSIGNED NOT NULL,
@@ -528,7 +537,7 @@ CREATE TABLE claims (
 -- 16. search_sync_logs DB→OpenSearch 同步队列
 -- ============================================================
 CREATE TABLE search_sync_logs (
-  id            BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  id            BIGINT UNSIGNED NOT NULL PRIMARY KEY, -- snowflake 主键,应用层 idgen_rs 生成
   entity_type   VARCHAR(32)   NOT NULL,   -- PRODUCT / CLAUSE / POLICY
   entity_id     BIGINT UNSIGNED NOT NULL, -- 业务实体主键
   op            VARCHAR(16)   NOT NULL,   -- UPSERT / DELETE
@@ -551,7 +560,7 @@ CREATE TABLE search_sync_logs (
 -- 17. audit_logs 操作审计
 -- ============================================================
 CREATE TABLE audit_logs (
-  id           BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  id           BIGINT UNSIGNED NOT NULL PRIMARY KEY, -- snowflake 主键,应用层 idgen_rs 生成
   user_id      BIGINT UNSIGNED NULL,             -- 操作人
   action       VARCHAR(64)   NOT NULL,           -- ORDER_PAY / POLICY_ISSUE / CONTRACT_SIGN ...
   entity_type  VARCHAR(32)   NOT NULL,           -- ORDER / POLICY / CONTRACT / PAYMENT ...
@@ -569,6 +578,40 @@ CREATE TABLE audit_logs (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 ```
 
+```sql
+-- ============================================================
+-- 18. claim_documents 理赔资料(v1.6.0 新增)
+-- ============================================================
+CREATE TABLE claim_documents (
+  id         BIGINT UNSIGNED NOT NULL PRIMARY KEY, -- snowflake 主键,应用层 idgen_rs 生成
+  claim_id   BIGINT UNSIGNED NOT NULL,
+  doc_type   VARCHAR(32)  NOT NULL,        -- 资料类型(发票/病历/诊断证明等)
+  file_name  VARCHAR(255) NOT NULL,        -- 原始文件名
+  file_key   VARCHAR(255) NOT NULL,        -- 对象存储文件 key(文件本体)
+  created_at DATETIME(3)  NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  KEY idx_claim_doc_claim (claim_id),
+  CONSTRAINT fk_claim_doc_claim FOREIGN KEY (claim_id)
+    REFERENCES claims (id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ============================================================
+-- 19. quote_rates 报价费率表(v1.6.0 新增)
+-- 语义:整期保费系数,premium = 保额 × rate
+-- ============================================================
+CREATE TABLE quote_rates (
+  id          BIGINT UNSIGNED NOT NULL PRIMARY KEY, -- snowflake 主键,应用层 idgen_rs 生成
+  product_id  BIGINT UNSIGNED NOT NULL,
+  term_months INT           NOT NULL,              -- 保障期(月)匹配维度
+  amount_min  DECIMAL(14,2) NOT NULL DEFAULT 0,    -- 保额下限(含)
+  amount_max  DECIMAL(14,2) NULL,                  -- 保额上限(含),NULL=不限
+  rate        DECIMAL(10,6) NOT NULL,              -- 整期保费系数
+  created_at  DATETIME(3)   NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  KEY idx_qrate_product (product_id, term_months),
+  CONSTRAINT fk_qrate_product FOREIGN KEY (product_id)
+    REFERENCES insurance_products (id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+```
+
 ---
 
 ## 5. 各表字段 / 索引 / 外键 / 状态机详解
@@ -576,8 +619,9 @@ CREATE TABLE audit_logs (
 ### 5.1 users — 用户账户
 
 - **关键字段**:`username`(唯一)、`phone_enc`/`id_card_enc`(密文)、`password_hash`、`role`、`status`。
+- **微信绑定(v1.6.0)**:`openid`(唯一,可空)/`unionid`(可空)落库支持绑定闭环;`token_version` 为令牌版本,logout/改密/换绑时 +1,旧 refresh token 立即失效。
 - **敏感处理**:手机号/身份证号存 AES 密文(`VARBINARY`),另存 `phone_masked`(脱敏串)供列表展示;明文仅内存中解密,不落库、不打日志。
-- **索引**:`uk_username`、`idx_phone_masked`。
+- **索引**:`uk_username`、`uk_openid`、`idx_phone_masked`。
 - **状态机** `status`: `ACTIVE → DISABLED / FROZEN`。
 
 ### 5.2 policy_holders — 被保人档案
@@ -703,6 +747,18 @@ CREATE TABLE audit_logs (
 
 ### 5.17 audit_logs — 操作审计
 
+### 5.18 claim_documents — 理赔资料(v1.6.0 新增)
+
+- **作用**:理赔环节上传资料的文件索引(发票/病历/诊断证明等),文件本体存对象存储,`file_key` 定位,不落文件内容。
+- **字段**:`claim_id`(FK→claims)、`doc_type`(资料类型)、`file_name`(原始文件名)、`file_key`(对象存储 key)。
+- **索引**:`idx_claim_doc_claim`(按理赔单查资料);FK 无级联删除(保留审计关联)。
+
+### 5.19 quote_rates — 报价费率表(v1.6.0 新增)
+
+- **作用**:产品分档费率,**整期保费 = 保额 × `rate`**(一次缴清口径的整期保费系数),供报价引擎按 (product_id, term_months) 与保额区间查档。
+- **字段**:`product_id`(FK→insurance_products)、`term_months`(保障期月数)、`amount_min`(保额下限,含,默认 0)、`amount_max`(上限,含;NULL=不限)、`rate`(`DECIMAL(10,6)`)、`created_at`。
+- **索引**:`idx_qrate_product(product_id, term_months)` 联合维度定位费率档。
+
 ---
 
 ## 6. bee_orm Rust 模型结构体
@@ -756,6 +812,11 @@ pub struct User {
     #[orm(update_time)]
     pub updated_at: DateTime<Utc>,
     pub deleted_at: Option<DateTime<Utc>>,
+    #[orm(size = 64, unique)]
+    pub openid: Option<String>,            // 微信 openid(v1.6.0 绑定闭环,可空)
+    #[orm(size = 64)]
+    pub unionid: Option<String>,           // 微信 unionid
+    pub token_version: i32,                // 令牌版本:logout/改密/换绑 +1 吊销旧 refresh
 }
 
 impl User {

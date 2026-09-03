@@ -51,7 +51,6 @@
 - **保单与契约**：保单列表 / 详情、受益人批改（`POLICY_ENDORSE` 审计留痕）、电子合同 Mock 签署与签署回调 API 已挂载；易签等外部电子签渠道规划中。
 - **理赔**：报案（`CLM` 单号，校验保单归属）、我的理赔列表、审核（APPROVE / REJECT，需 OPERATOR / ADMIN）、资料上传 / 列表（`claim_documents` 元数据）已实现。
 - **运营 / 审计**：运营后台 API、`audit_logs` 全量留痕 + 审计查询接口（`/api/v1/admin/audit-logs`，OPERATOR / ADMIN）。
-- **运营 / 审计（规划）**：运营后台 API、`audit_log` 全量留痕。
 - **横切能力**：入站安全扫描、参数化查询、AES-256-GCM 敏感字段加密、令牌精确过期（leeway=0）、
   snowflake 分布式主键（idgen_rs 无锁生成，worker 位长 6 + 序列位长 6，worker_id 经 `IDGEN_WORKER_ID` 配置）、
   全链路 `trace_id`、统一响应信封（`{code, message, data}`，业务错误 `40000`）。
@@ -142,6 +141,7 @@ insurance-service/
 | `JWT_SECRET` / `JWT_ISSUER` | JWT 签名密钥 / 签发者 | — |
 | `JWT_ACCESS_EXPIRY` / `JWT_REFRESH_EXPIRY` | access / refresh 有效秒数 | `7200` / `604800` |
 | `CRYPTO_MASTER_KEY` | AES-256-GCM 主密钥（口令 / 敏感字段加密） | — |
+| `IDGEN_WORKER_ID` | snowflake 主键 worker id（多实例各分配唯一 0-63） | `0` |
 | `RUST_LOG` | 日志级别 | `info` |
 
 ### 初始化数据库

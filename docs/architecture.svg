@@ -102,8 +102,8 @@
     <text x="669" y="339" text-anchor="middle" font-size="13" fill="#643a94" font-weight="600">search_service</text>
     <text x="669" y="356" text-anchor="middle" font-size="11" fill="#8a6cb6">搜索（LIKE 降级）</text>
     <rect x="780" y="314" width="198" height="52" rx="8" fill="#f1e8fa" stroke="#b493e0"/>
-    <text x="879" y="339" text-anchor="middle" font-size="13" fill="#643a94" font-weight="600">（规划）</text>
-    <text x="879" y="356" text-anchor="middle" font-size="11" fill="#8a6cb6">报价 · 订单 · 保单 · 理赔</text>
+    <text x="879" y="339" text-anchor="middle" font-size="13" fill="#643a94" font-weight="600">业务扩展</text>
+    <text x="879" y="356" text-anchor="middle" font-size="11" fill="#8a6cb6">报价 · 订单 · 支付 · 保单 · 签约 · 理赔</text>
   </g>
 
   <!-- ===================== 6. 外部 Provider ===================== -->
@@ -113,13 +113,13 @@
     <text x="76" y="424" text-anchor="middle" font-size="11" fill="#d5dce4">适配层</text>
     <rect x="150" y="382" width="198" height="52" rx="8" fill="#fff6f6" stroke="#e3a3a3"/>
     <text x="249" y="407" text-anchor="middle" font-size="13" fill="#963b3b" font-weight="600">微信支付</text>
-    <text x="249" y="424" text-anchor="middle" font-size="11" fill="#b06b6b">支付预下单 · 回调</text>
+    <text x="249" y="424" text-anchor="middle" font-size="11" fill="#b06b6b">支付预下单 · 回调（Mock 渠道）</text>
     <rect x="360" y="382" width="198" height="52" rx="8" fill="#fff6f6" stroke="#e3a3a3"/>
     <text x="459" y="407" text-anchor="middle" font-size="13" fill="#963b3b" font-weight="600">支付宝</text>
     <text x="459" y="424" text-anchor="middle" font-size="11" fill="#b06b6b">支付接入（规划）</text>
     <rect x="570" y="382" width="198" height="52" rx="8" fill="#fff6f6" stroke="#e3a3a3"/>
     <text x="669" y="407" text-anchor="middle" font-size="13" fill="#963b3b" font-weight="600">易签电子签约</text>
-    <text x="669" y="424" text-anchor="middle" font-size="11" fill="#b06b6b">合同签署 · 签署回调</text>
+    <text x="669" y="424" text-anchor="middle" font-size="11" fill="#b06b6b">Mock 签署 · 回调验签</text>
     <rect x="780" y="382" width="198" height="52" rx="8" fill="#fff6f6" stroke="#e3a3a3"/>
     <text x="879" y="407" text-anchor="middle" font-size="13" fill="#963b3b" font-weight="600">Mock 模拟</text>
     <text x="879" y="424" text-anchor="middle" font-size="11" fill="#b06b6b">本地开发 / 测试</text>
@@ -155,8 +155,8 @@
   </g>
 
   <!-- 说明文字 -->
-  <text x="20" y="610" font-size="11.5" fill="#5f6f82">说明：阶段 0→1 已落地 认证 / 商品 / 搜索 三组路由与控制器；</text>
-  <text x="20" y="628" font-size="11.5" fill="#5f6f82">报价、订单、支付、保单、电子签约、理赔、管理后台 API 已在数据驱动路由表（src/routes.rs）中规划，按同一模式逐步挂载。</text>
+  <text x="20" y="610" font-size="11.5" fill="#5f6f82">说明：认证 / 商品 / 搜索 / 报价 / 订单 / 支付 / 保单 / 签约 / 理赔 / 运营 / 审计 路由与控制器均已挂载（数据驱动路由表共 39 业务端点）；</text>
+  <text x="20" y="628" font-size="11.5" fill="#5f6f82">支付与电子签当前为 Mock 渠道（微信支付 / 支付宝 / 易签真实渠道规划中）；微信登录 code2session 已配置化；业务主键由应用层 snowflake（idgen_rs）生成。</text>
 
   <!-- 水印 -->
   <text x="972" y="672" text-anchor="end" font-size="22" font-weight="600" fill="#8ea0b5" fill-opacity="0.45" transform="rotate(-12 900 680)">https://erik.xyz</text>

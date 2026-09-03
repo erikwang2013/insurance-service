@@ -1,13 +1,13 @@
 # 保险服务平台 — 后端 bee-rust 架构规划
 
-> 版本: v1.0 | 日期: 2026-09-01 | 状态: 待评审
+> 版本: v1.0 → v1.7 | 日期: 2026-09-01（v1.6/v1.7 实现事实已同步标注）| 状态: 规划蓝图（对照实现核对版）
 > 框架: `bee-rust`（Beerust，Rust Web 框架，对标 Go Beego）— git 依赖 `features=["full"]`
 > 搜索: OpenSearch（`bee_search`）+ rust-scout（业务层门面）
 > 数据库: MySQL 8（`bee_orm` feature `mysql`）；缓存/会话: Redis（`bee_kv`/`bee_session`）
 > 安全: security-rust（27 检测器，`bee_rust` security feature 内置 `SecurityFilter`）
 > 多端: Flutter / 原生微信小程序 / 鸿蒙 ArkTS 共用同一 REST API
 >
-> 关联文档: [db-schema.md](./db-schema.md)（17 表 Schema 与 Rust models）、[flutter-app.md](./flutter-app.md)、[miniprogram-harmony.md](./miniprogram-harmony.md)
+> 关联文档: [db-schema.md](./db-schema.md)（19 表 Schema 与 Rust models）、[flutter-app.md](./flutter-app.md)、[miniprogram-harmony.md](./miniprogram-harmony.md)
 
 ---
 
@@ -252,7 +252,8 @@ RESTful 命名空间 `/api/v1`。三端（Flutter/小程序/鸿蒙）共用同�
 |---------|------|------|-----------|------|
 | auth | POST | `/api/v1/auth/register` | 注册 | 公开 |
 | auth | POST | `/api/v1/auth/login` | 登录（密码/验证码） | 公开 |
-| auth | POST | `/api/v1/auth/wechat/login` | 微信 code2session | 公开 |
+| auth | POST | `/api/v1/auth/wechat/login` | 微信登录：code2session → openid 直登 / 未绑定提示 / 未配置降级（v1.6.0 已实现） | 公开 |
+| auth | POST | `/api/v1/auth/wechat/bind` | 微信绑定：code2session 校验 + 写 users.openid，openid 冲突返回 40900（v1.6.0） | 需认证 |
 | auth | POST | `/api/v1/auth/refresh` | 刷新令牌 | 公开（refresh token） |
 | auth | POST | `/api/v1/auth/logout` | 登出 | 需认证 |
 | products | GET | `/api/v1/products` | 产品列表（分页/筛选） | 公开 |
@@ -270,6 +271,7 @@ RESTful 命名空间 `/api/v1`。三端（Flutter/小程序/鸿蒙）共用同�
 | payments | POST | `/api/v1/payments/callback/{provider}` | 支付渠道回调 | 公开（验签） |
 | policies | GET | `/api/v1/policies` | 我的保单 | 需认证 |
 | policies | GET | `/api/v1/policies/{id}` | 保单详情 | 需认证（属主） |
+| policies | POST | `/api/v1/policies/{id}/beneficiaries` | 受益人批改（audit_logs action=POLICY_ENDORSE 快照，v1.6.0） | 需认证（属主） |
 | contracts | GET | `/api/v1/contracts/{id}` | 合同详情 | 需认证（属主） |
 | contracts | POST | `/api/v1/contracts/{id}/sign` | 发起签署 | 需认证 |
 | contracts | GET | `/api/v1/contracts/{id}/sign-url` | 获取签署链接 | 需认证 |
@@ -277,8 +279,12 @@ RESTful 命名空间 `/api/v1`。三端（Flutter/小程序/鸿蒙）共用同�
 | search | GET | `/api/v1/search` | 全文搜索 | 公开 |
 | claims | POST | `/api/v1/claims` | 报案 | 需认证 |
 | claims | GET | `/api/v1/claims` | 我的理赔 | 需认证 |
+| claims | POST/GET | `/api/v1/claims/{id}/documents` | 理赔材料上传/查询（claim_documents 元数据，v1.6.0） | 需认证（属主） |
 | user | GET | `/api/v1/user/me` | 当前用户 | 需认证 |
 | admin | * | `/api/v1/admin/**` | 管理端（产品上架/审核） | 需 ADMIN/OPERATOR |
+| admin | GET | `/api/v1/admin/audit-logs` | 审计日志（OPERATOR/ADMIN 过滤分页，v1.6.0） | 需 ADMIN/OPERATOR |
+
+> **实现核对**：本表为规划蓝图；现网实现以 `src/routes.rs` 的 `route_table()` 为准（共 39 个业务端点）。v1.6.0 新增 `auth/wechat/bind`、`policies/{id}/beneficiaries`、`claims/{id}/documents`、`admin/audit-logs` 已并入上表。费率计算（v1.6.0）：`quote_rates` 命中 → premium = 保额 × rate；未命中或费率表缺失（ERRNO 1146）→ 回退使用请求保费。
 
 ### 路由注册示例（bee_router 风格）
 
@@ -499,6 +505,7 @@ pub enum AppError {
 - **Access Token**（JWT）：短时效（如 2h），无状态，携带 `sub`（user_id）、`role`、`platform`；
 - **Refresh Token**：长时效（如 7d），存 Redis（`refresh:{user_id}`），支持吊销；
 - 登录 → 签发双令牌；刷新接口用 refresh token 换新 access token。
+- **吊销机制（v1.6.0 已实现）**：logout / 改密 / 换绑手机 → `users.token_version + 1`，旧 refresh token 立即失效；JWT Claims 携带 `token_version`（`#[serde(default)]` 兼容历史令牌）。
 
 ### 7.2 三种登录渠道
 
@@ -506,7 +513,7 @@ pub enum AppError {
 |------|------|
 | 密码登录 | 手机号/用户名 + 密码（argon2 校验）→ 签发 JWT |
 | 验证码登录 | 短信验证码（Redis 存验证码）→ 签发 JWT |
-| 微信登录 | `wx.login` code → 后端 code2session → 查/建用户 → 绑定手机号 → 签发 JWT |
+| 微信登录 | `wx.login` code → 后端 code2session → 按 openid 查用户：已绑定 → 直登签发 JWT；未绑定 → 提示先登录既有账号再调 wechat/bind 绑定；微信未配置 → 降级（v1.6.0 已实现） |
 
 ### 7.3 RBAC 角色
 
@@ -1066,7 +1073,8 @@ master_key = "${CRYPTO_MASTER_KEY}"
 - [ ] 产品搜索 + 首页推荐
 
 ### 阶段 3 — 小程序 + 鸿蒙
-- [ ] 微信登录 + 微信支付真实适配
+- [x] 微信登录（v1.6.0 已实现：wechat/login openid 直登 + wechat/bind 绑定闭环）
+- [ ] 微信支付真实适配
 - [ ] 鸿蒙 ArkTS 端联调
 
 ### 阶段 4 — 真实渠道与加固

@@ -94,7 +94,7 @@ miniprogram/
      → 保单生成 → 保单详情 → 合同签署 → 签署完成（PDF 落款）
 ```
 
-### 1.3 登录流程设计（wx.login → code2session → 绑定手机号 → JWT）
+### 1.3 登录流程设计（wx.login → code2session → openid 直登 / 绑定微信 → JWT）
 
 ```
 启动 app.js
@@ -105,16 +105,16 @@ miniprogram/
   │
   └─ 静默登录（无需用户操作）:
        1. wx.login() 获取临时 code
-       2. 调用后端 POST /api/v1/auth/wechat-login { code, platform: 'miniprogram' }
+       2. 调用后端 POST /api/v1/auth/wechat/login { code, platform: 'miniprogram' }
        3. 后端用 code 调微信 code2session 换取 openid/session_key，签发 JWT 返回
        4. 若用户已绑定手机号 → 直接返回 JWT → 存 storage → 完成
        5. 若未绑定手机号 → 返回 needBind=true → 进入绑定流程
   │
-  └─ 绑定手机号（首次或资料缺失）:
-       1. 用户在登录页点击「微信手机号快捷授权」→ wx.getPhoneNumber 获取 phoneCode
-       2. 调用 POST /api/v1/auth/bind-phone { phoneCode, ... }
-       3. 后端解析手机号并绑定账号，签发/刷新 JWT
-       4. 返回业务页
+  └─ 绑定微信（未绑定 openid 的既有账号）:
+       1. 用户先以既有方式登录账号（手机号/密码）
+       2. 再次 wx.login() 获取新 code，调用 POST /api/v1/auth/wechat/bind { code }
+       3. 后端用 code 调微信 code2session 换取 openid，写入 users.openid（该 openid 已被他人绑定 → 返回 40900）
+       4. 返回业务页；此后可走微信一键登录（openid 直登）
 ```
 
 **要点**：
@@ -122,7 +122,7 @@ miniprogram/
 - 会话密钥 `session_key` 只留在后端，客户端永不接触，降低数据解密面。
 - JWT 存储：短 Token 存 `wx.setStorageSync`（内存 + 本地），或用更安全方案（见第六章端侧安全）。
 - 401 处理：请求拦截器收到 `code=401`（或 `code=UNAUTHORIZED`）时，静默重新走登录流程，成功后重放原请求（重放队列，避免并发重复登录）。
-- 登出：`POST /api/v1/auth/logout`（可选，服务端拉黑 refresh token）→ 清空本地 token → 回登录页。
+- 登出：`POST /api/v1/auth/logout`（后端 users.token_version+1，旧 refresh token 立即失效）→ 清空本地 token → 回登录页。
 
 ### 1.4 微信支付流程（统一下单 → wx.requestPayment）
 
@@ -395,7 +395,7 @@ OrderDetailPage → 点「去支付」
 | 平台头值 | `flutter` | `miniprogram` | `harmony` |
 
 **后端需提供的差异化能力（配合 X-Client-Platform）**：
-- `/auth/wechat-login` 仅对 `miniprogram` 开放；`/auth/login` 对 flutter/harmony 开放。
+- `/auth/wechat/login` 仅对 `miniprogram` 开放；`/auth/login` 对 flutter/harmony 开放。
 - `/payments/*/prepay` 根据平台返回不同支付渠道参数（wechat / alipay / unionpay / huawei-pay）。
 - 相同业务域（products/quotes/orders/policies/contracts/search）三端完全共用，仅在登录/支付两个能力上分流。
 

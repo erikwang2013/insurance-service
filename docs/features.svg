@@ -17,8 +17,8 @@
     <rect x="30" y="72" width="460" height="10" fill="#4a6785"/>
     <text x="260" y="72" text-anchor="middle" font-size="14" fill="#fff" font-weight="600">① 用户与认证</text>
     <text x="50" y="104" font-size="12.5" fill="#2b3a4a">• 注册：用户名唯一校验 + 密码 argon2 哈希存储，签发双令牌</text>
-    <text x="50" y="124" font-size="12.5" fill="#2b3a4a">• 登录：账号密码 / OAuth 微信登录（规划），错误不区分账号与密码</text>
-    <text x="50" y="144" font-size="12.5" fill="#2b3a4a">• 令牌：JWT HS256（access 短时效 + refresh 长时效），RBAC 角色 USER / AGENT / OPERATOR / ADMIN</text>
+    <text x="50" y="124" font-size="12.5" fill="#2b3a4a">• 登录：账号密码 / 微信（code2session 绑定直登，凭据缺失降级），错误不区分账号与密码</text>
+    <text x="50" y="144" font-size="12.5" fill="#2b3a4a">• 令牌：JWT HS256 双令牌，token_version 吊销 +1（logout / 改密 / 换绑）；RBAC 角色</text>
   </g>
 
   <!-- ===================== 2. 商品 ===================== -->
@@ -29,7 +29,7 @@
     <text x="740" y="72" text-anchor="middle" font-size="14" fill="#fff" font-weight="600">② 保险商品</text>
     <text x="530" y="104" font-size="12.5" fill="#2b3a4a">• 列表：分页 / 状态过滤（ON_SALE · OFF_SHELF·软删）/ 精选位</text>
     <text x="530" y="124" font-size="12.5" fill="#2b3a4a">• 详情：单商品查询；关联条款（insurance_product_clause）阅读</text>
-    <text x="530" y="144" font-size="12.5" fill="#2b3a4a">• 管理：admin 上架 / 下架 / upsert（数据驱动路由表已规划）</text>
+    <text x="530" y="144" font-size="12.5" fill="#2b3a4a">• 管理：运营后台建档 / 上架 / 下架 / 停售（OPERATOR · ADMIN）</text>
   </g>
 
   <!-- ===================== 3. 搜索 ===================== -->
@@ -43,37 +43,37 @@
     <text x="50" y="268" font-size="12.5" fill="#2b3a4a">• 降级路径：索引未就绪自动回退 LIKE，不阻塞业务</text>
   </g>
 
-  <!-- ===================== 4. 交易闭环（规划） ===================== -->
+  <!-- ===================== 4. 交易闭环 ===================== -->
   <g>
     <rect x="510" y="176" width="460" height="108" rx="10" fill="#fff" stroke="#e0b36a"/>
     <rect x="510" y="176" width="460" height="30" rx="10" fill="#8a6420"/>
     <rect x="510" y="196" width="460" height="10" fill="#8a6420"/>
-    <text x="740" y="196" text-anchor="middle" font-size="14" fill="#fff" font-weight="600">④ 报价 · 订单 · 支付（规划）</text>
-    <text x="530" y="228" font-size="12.5" fill="#2b3a4a">• 报价（quote）→ 订单（order）→ 支付（payment）逐级依赖，事务闭环</text>
-    <text x="530" y="248" font-size="12.5" fill="#2b3a4a">• Provider 适配：微信支付 / 支付宝 / Mock（预下单 + 回调验签）</text>
-    <text x="530" y="268" font-size="12.5" fill="#2b3a4a">• 数据表已就位（install.sql），路由在 src/routes.rs 已登记</text>
+    <text x="740" y="196" text-anchor="middle" font-size="14" fill="#fff" font-weight="600">④ 报价 · 订单 · 支付</text>
+    <text x="530" y="228" font-size="12.5" fill="#2b3a4a">• 费率表报价：quote_rates 命中优先，未命中回退请求保费</text>
+    <text x="530" y="248" font-size="12.5" fill="#2b3a4a">• 订单 → 支付逐级依赖事务闭环；微信渠道 Mock（预下单 + 回调验签）</text>
+    <text x="530" y="268" font-size="12.5" fill="#2b3a4a">• 路由已挂载：数据驱动路由表 src/routes.rs（39 个业务端点）</text>
   </g>
 
-  <!-- ===================== 5. 保单托管（规划） ===================== -->
+  <!-- ===================== 5. 保单 · 契约 ===================== -->
   <g>
     <rect x="30" y="300" width="460" height="108" rx="10" fill="#fff" stroke="#e3a3a3"/>
     <rect x="30" y="300" width="460" height="30" rx="10" fill="#963b3b"/>
     <rect x="30" y="320" width="460" height="10" fill="#963b3b"/>
-    <text x="260" y="320" text-anchor="middle" font-size="14" fill="#fff" font-weight="600">⑤ 保单 · 契约（规划）</text>
-    <text x="50" y="352" font-size="12.5" fill="#2b3a4a">• 保单签发：投保人 / 受益人（policy_holder / policy_beneficiary）</text>
-    <text x="50" y="372" font-size="12.5" fill="#2b3a4a">• 电子合同：易签 Provider（签署链接 / 签署回调 / 合同落库）</text>
+    <text x="260" y="320" text-anchor="middle" font-size="14" fill="#fff" font-weight="600">⑤ 保单 · 契约</text>
+    <text x="50" y="352" font-size="12.5" fill="#2b3a4a">• 保单签发 / 详情；受益人批改（POLICY_ENDORSE 审计留痕）</text>
+    <text x="50" y="372" font-size="12.5" fill="#2b3a4a">• 电子合同：Mock 签署 / 签署回调 / 合同落库（易签渠道规划中）</text>
     <text x="50" y="392" font-size="12.5" fill="#2b3a4a">• 签约人签名记录（contract_signer）</text>
   </g>
 
-  <!-- ===================== 6. 理赔与风控（规划） ===================== -->
+  <!-- ===================== 6. 理赔 · 运营 · 审计 ===================== -->
   <g>
     <rect x="510" y="300" width="460" height="108" rx="10" fill="#fff" stroke="#9fb8d4"/>
     <rect x="510" y="300" width="460" height="30" rx="10" fill="#2f4f74"/>
     <rect x="510" y="320" width="460" height="10" fill="#2f4f74"/>
-    <text x="740" y="320" text-anchor="middle" font-size="14" fill="#fff" font-weight="600">⑥ 理赔 · 运营 · 审计（规划）</text>
-    <text x="530" y="352" font-size="12.5" fill="#2b3a4a">• 理赔申请 / 我的理赔（claims / my_claims）</text>
-    <text x="530" y="372" font-size="12.5" fill="#2b3a4a">• 运营：运营管理后台 API（admin/products upsert 等）</text>
-    <text x="530" y="392" font-size="12.5" fill="#2b3a4a">• 审计：audit_log 全量留痕；搜索同步记录 search_sync_log</text>
+    <text x="740" y="320" text-anchor="middle" font-size="14" fill="#fff" font-weight="600">⑥ 理赔 · 运营 · 审计</text>
+    <text x="530" y="352" font-size="12.5" fill="#2b3a4a">• 理赔：报案 / 我的理赔 / 审核（APPROVE · REJECT）/ 资料上传列表</text>
+    <text x="530" y="372" font-size="12.5" fill="#2b3a4a">• 运营：商品建档 / 上下架后台 API（OPERATOR · ADMIN 已挂载）</text>
+    <text x="530" y="392" font-size="12.5" fill="#2b3a4a">• 审计：audit_logs 全量留痕 + 查询 API（/api/v1/admin/audit-logs）</text>
   </g>
 
   <!-- ===================== 7. 横切与质量 ===================== -->
@@ -84,7 +84,7 @@
     <text x="500" y="444" text-anchor="middle" font-size="14" fill="#fff" font-weight="600">⑦ 横切能力</text>
     <text x="50" y="474" font-size="12.5" fill="#2b3a4a">安全：SecurityFilter 入站扫描 · 参数化查询防注入 · AES-256-GCM 敏感字段 · argon2 口令哈希 · 令牌精确过期（leeway=0）</text>
     <text x="50" y="494" font-size="12.5" fill="#2b3a4a">可观测：Trace 过滤器生成 trace_id，贯穿 RequestCtx；统一响应信封（code / message / data，业务错误 40000）</text>
-    <text x="50" y="514" font-size="12.5" fill="#2b3a4a">质量：集成测试（38 项，MySQL 缺失自动 SKIP）覆盖认证 / 商品 / 搜索 / 安全；按 CLAUDE.md「先测试后提交」保障</text>
+    <text x="50" y="514" font-size="12.5" fill="#2b3a4a">质量：集成测试 129 项（单元 14 + 集成 115，MySQL 缺失自动 SKIP）覆盖认证 / 商品 / 搜索 / 交易 / 理赔 / 审计；主键：snowflake（idgen_rs，worker_id 0-63）</text>
   </g>
 
   <text x="972" y="540" text-anchor="end" font-size="22" font-weight="600" fill="#8ea0b5" fill-opacity="0.45" transform="rotate(-12 900 548)">https://erik.xyz</text>

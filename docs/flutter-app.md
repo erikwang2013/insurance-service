@@ -287,7 +287,7 @@ class ApiClient {
 ### 4.2 features/home — 首页
 
 - `HomePage`:欢迎区(登录态)、产品分类入口、运营 Banner、推荐产品列表、快捷入口(我的保单/合同签署)。
-- 数据: `GET /api/v1/products?featured=1`、`GET /api/v1/search/hot`。
+- 数据: `GET /api/v1/products/featured`（首页推荐）。
 - 卡片点击 → 产品详情/搜索。
 
 ### 4.3 features/product — 产品列表 / 详情 / 搜索

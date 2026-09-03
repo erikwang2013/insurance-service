@@ -1,7 +1,7 @@
 # 保险服务平台 — 设计文档（本地摘要）
 
 > 本文档为**设计决策摘要与索引**，权威细节见 `docs/backend-architecture.md`（架构）与
-> `docs/db-schema.md`（17 表 Schema 与 Rust models）。设计正文不在此重复。
+> `docs/db-schema.md`（19 表 Schema 与 Rust models）。设计正文不在此重复。
 > 版本: 2026-09-02。
 
 ---
@@ -42,11 +42,11 @@ MVC 分层，过滤器链承载横切关注点：
 - 支付：`PayProvider` 接口 + 微信支付 / 支付宝 / Mock（预下单 + 回调验签，回调幂等）。
 - 电子签：`ElectronicSignature` 接口 + 易签 / 法大大 / Mock（签署链接、签署回调、合同落库）。
 
-## 4. 数据模型要点（17 表）
+## 4. 数据模型要点（19 表）
 
 - users / insurance_products / clauses / quotes / orders / payments / policies（holder+beneficiary）/ contracts(+signer) / claims / audit_logs / search_sync_logs 等。
 - 投保人 / 被保人 / 受益人可不同；一张保单多受益人，`beneficiary_share` 合计 100%。
-- 主键 BIGINT UNSIGNED AUTO_INCREMENT；业务号（保单号/订单号/合同号）独立生成并唯一索引。
+- 主键由应用层 snowflake 生成（idgen_rs 0.2.0 无锁算法，`crate::utils::idgen::next_id()`，worker_id 取 `IDGEN_WORKER_ID` env，默认 0）；业务号（保单 O / 订单 P / 报价 Q / 理赔 CL）保留前缀独立生成并唯一索引。
 
 ## 5. 文档导航
 
