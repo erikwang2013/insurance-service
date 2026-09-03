@@ -49,16 +49,21 @@ async fn ensure_rate_table(db: &Db) {
     .expect("创建 quote_rates 表");
 }
 
-/// 插入一个测试用户，返回自增 id。
+/// 插入一个测试用户，返回预生成 id。
 async fn insert_user(db: &Db, username: &str) -> i64 {
     let mut conn = db.conn().await.expect("连接测试库");
+    let user_id = insurance_service::utils::idgen::next_id();
     conn.exec_drop(
-        "INSERT INTO users (username, password_hash) VALUES (?, ?)",
-        vec![Value::from(username), Value::from("test-hash")],
+        "INSERT INTO users (id, username, password_hash) VALUES (?, ?, ?)",
+        vec![
+            Value::from(user_id),
+            Value::from(username),
+            Value::from("test-hash"),
+        ],
     )
     .await
     .expect("插入用户");
-    conn.last_insert_id().expect("取得自增 id") as i64
+    user_id
 }
 
 /// 按 FK 顺序插入 用户 → 产品，生成最小数据链。
@@ -66,9 +71,11 @@ async fn insert_chain(db: &Db, username: &str) -> Chain {
     let user_id = insert_user(db, username).await;
     let mut conn = db.conn().await.expect("连接测试库");
     let product_code = common::unique("qr");
+    let product_id = insurance_service::utils::idgen::next_id();
     conn.exec_drop(
-        "INSERT INTO insurance_products (product_code, name, product_type) VALUES (?, ?, ?)",
+        "INSERT INTO insurance_products (id, product_code, name, product_type) VALUES (?, ?, ?, ?)",
         vec![
+            Value::from(product_id),
             Value::from(&product_code),
             Value::from("费率测试产品"),
             Value::from("HEALTH"),
@@ -76,7 +83,6 @@ async fn insert_chain(db: &Db, username: &str) -> Chain {
     )
     .await
     .expect("插入产品");
-    let product_id = conn.last_insert_id().expect("取得自增 id") as i64;
     Chain { username: username.to_string(), product_code, user_id, product_id }
 }
 
@@ -84,9 +90,10 @@ async fn insert_chain(db: &Db, username: &str) -> Chain {
 async fn insert_rate(db: &Db, product_id: i64, term: i32, min: &str, max: Option<&str>, rate: &str) {
     let mut conn = db.conn().await.expect("连接测试库");
     conn.exec_drop(
-        "INSERT INTO quote_rates (product_id, term_months, amount_min, amount_max, rate) \
-         VALUES (?, ?, ?, ?, ?)",
+        "INSERT INTO quote_rates (id, product_id, term_months, amount_min, amount_max, rate) \
+         VALUES (?, ?, ?, ?, ?, ?)",
         vec![
+            Value::from(insurance_service::utils::idgen::next_id()),
             Value::from(product_id),
             Value::from(term),
             Value::from(min),

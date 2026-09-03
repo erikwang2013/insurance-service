@@ -53,16 +53,17 @@ fn expect_business(err: AppError, needle: &str) {
     }
 }
 
-/// 插入一个测试用户，返回自增 id。
+/// 插入一个测试用户，返回 snowflake id。
 async fn insert_user(db: &Db, username: &str) -> i64 {
     let mut conn = db.conn().await.expect("连接测试库");
+    let id = insurance_service::utils::idgen::next_id();
     conn.exec_drop(
-        "INSERT INTO users (username, password_hash) VALUES (?, ?)",
-        vec![Value::from(username), Value::from("test-hash")],
+        "INSERT INTO users (id, username, password_hash) VALUES (?, ?, ?)",
+        vec![Value::from(id), Value::from(username), Value::from("test-hash")],
     )
     .await
     .expect("插入用户");
-    conn.last_insert_id().expect("取得自增 id") as i64
+    id
 }
 
 /// 建链：唯一用户名 + 唯一产品（清理按用户名/产品码精确命中本链行）。
@@ -72,13 +73,13 @@ async fn setup_chain(db: &Db, prefix: &str) -> Chain {
 
     let product_code = common::unique("tp");
     let mut conn = db.conn().await.expect("连接测试库");
+    let product_id = insurance_service::utils::idgen::next_id();
     conn.exec_drop(
-        "INSERT INTO insurance_products (product_code, name, product_type) VALUES (?, ?, ?)",
-        vec![Value::from(&product_code), Value::from("测试产品"), Value::from("HEALTH")],
+        "INSERT INTO insurance_products (id, product_code, name, product_type) VALUES (?, ?, ?, ?)",
+        vec![Value::from(product_id), Value::from(&product_code), Value::from("测试产品"), Value::from("HEALTH")],
     )
     .await
     .expect("插入产品");
-    let product_id = conn.last_insert_id().expect("取得自增 id") as i64;
 
     Chain { username, product_code, user_id, product_id }
 }

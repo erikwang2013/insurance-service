@@ -40,12 +40,14 @@ fn db_url() -> String {
         .unwrap_or_else(|_| "mysql://root:@127.0.0.1:13307/insurance_service".to_string())
 }
 
-/// 插入指定角色的测试用户，返回自增 id。
+/// 插入指定角色的测试用户，返回预生成 id。
 async fn insert_user(db: &Db, username: &str, role: &str) -> i64 {
     let mut conn = db.conn().await.expect("连接测试库");
+    let user_id = insurance_service::utils::idgen::next_id();
     conn.exec_drop(
-        "INSERT INTO users (username, password_hash, role) VALUES (?, ?, ?)",
+        "INSERT INTO users (id, username, password_hash, role) VALUES (?, ?, ?, ?)",
         vec![
+            MyValue::from(user_id),
             MyValue::from(username),
             MyValue::from("test-hash"),
             MyValue::from(role),
@@ -53,10 +55,10 @@ async fn insert_user(db: &Db, username: &str, role: &str) -> i64 {
     )
     .await
     .expect("插入用户");
-    conn.last_insert_id().expect("取得自增 id") as i64
+    user_id
 }
 
-/// 直插一条审计日志（created_at 显式指定以断言排序/时间过滤）。
+/// 直插一条审计日志（created_at 显式指定以断言排序/时间过滤），返回预生成 id。
 async fn insert_audit(
     db: &Db,
     user_id: Option<i64>,
@@ -67,11 +69,13 @@ async fn insert_audit(
     with_json: bool,
 ) -> i64 {
     let mut conn = db.conn().await.expect("连接测试库");
+    let audit_id = insurance_service::utils::idgen::next_id();
     if with_json {
         conn.exec_drop(
-            "INSERT INTO audit_logs (user_id, action, entity_type, entity_id, before_json, created_at) \
-             VALUES (?, ?, ?, ?, ?, ?)",
+            "INSERT INTO audit_logs (id, user_id, action, entity_type, entity_id, before_json, created_at) \
+             VALUES (?, ?, ?, ?, ?, ?, ?)",
             vec![
+                MyValue::from(audit_id),
                 user_id.map(MyValue::from).unwrap_or(MyValue::NULL),
                 MyValue::from(action),
                 MyValue::from(entity_type),
@@ -84,9 +88,10 @@ async fn insert_audit(
         .expect("插入审计日志");
     } else {
         conn.exec_drop(
-            "INSERT INTO audit_logs (user_id, action, entity_type, entity_id, created_at) \
-             VALUES (?, ?, ?, ?, ?)",
+            "INSERT INTO audit_logs (id, user_id, action, entity_type, entity_id, created_at) \
+             VALUES (?, ?, ?, ?, ?, ?)",
             vec![
+                MyValue::from(audit_id),
                 user_id.map(MyValue::from).unwrap_or(MyValue::NULL),
                 MyValue::from(action),
                 MyValue::from(entity_type),
@@ -97,7 +102,7 @@ async fn insert_audit(
         .await
         .expect("插入审计日志");
     }
-    conn.last_insert_id().expect("取得自增 id") as i64
+    audit_id
 }
 
 /// 清理直插的审计行（按唯一 action 令牌，只命中本测试数据）。

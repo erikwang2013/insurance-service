@@ -1,6 +1,6 @@
 -- ============================================================
 -- 保险服务平台 MySQL 建库脚本（install.sql）
--- 来源: docs/db-schema.md §4 完整 DDL（17 张表）
+-- 来源: docs/db-schema.md §4 完整 DDL（19 张表,主键均为应用层 snowflake 生成）
 -- 约定: utf8mb4 / utf8mb4_unicode_ci / InnoDB / DATETIME(3) 毫秒级
 -- ============================================================
 CREATE DATABASE IF NOT EXISTS insurance_service
@@ -11,7 +11,7 @@ USE insurance_service;
 -- 1. users 用户账户
 -- ============================================================
 CREATE TABLE users (
-  id            BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  id            BIGINT UNSIGNED NOT NULL PRIMARY KEY, -- snowflake 主键,应用层 idgen_rs 生成
   username      VARCHAR(64)  NOT NULL,
   phone_enc     VARBINARY(512)  NULL,      -- 手机号 AES 密文
   id_card_enc   VARBINARY(1024) NULL,      -- 身份证号 AES 密文
@@ -39,7 +39,7 @@ CREATE TABLE users (
 -- 2. policy_holders 被保人档案
 -- ============================================================
 CREATE TABLE policy_holders (
-  id            BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  id            BIGINT UNSIGNED NOT NULL PRIMARY KEY, -- snowflake 主键,应用层 idgen_rs 生成
   user_id       BIGINT UNSIGNED NULL,        -- 关联投保人账户;为他人投保时为 NULL
   name          VARCHAR(64)   NOT NULL,      -- 被保人姓名
   id_card_enc   VARBINARY(1024) NULL,        -- 身份证密文
@@ -62,7 +62,7 @@ CREATE TABLE policy_holders (
 -- 3. insurance_products 保险产品
 -- ============================================================
 CREATE TABLE insurance_products (
-  id               BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  id               BIGINT UNSIGNED NOT NULL PRIMARY KEY, -- snowflake 主键,应用层 idgen_rs 生成
   product_code     VARCHAR(64)   NOT NULL,        -- 产品编码,对外唯一
   name             VARCHAR(128)  NOT NULL,
   subtitle         VARCHAR(255)  NULL,            -- 副标题/卖点
@@ -97,7 +97,7 @@ CREATE TABLE insurance_products (
 -- 4. insurance_product_clauses 产品条款
 -- ============================================================
 CREATE TABLE insurance_product_clauses (
-  id          BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  id          BIGINT UNSIGNED NOT NULL PRIMARY KEY, -- snowflake 主键,应用层 idgen_rs 生成
   product_id  BIGINT UNSIGNED NOT NULL,
   clause_type VARCHAR(32)   NOT NULL,   -- MAIN/EXCLUSION/WAIVER/RIDER/OBLIGATION
   title       VARCHAR(255)  NOT NULL,
@@ -119,7 +119,7 @@ CREATE TABLE insurance_product_clauses (
 -- 5. insurance_product_categories 产品分类(树)
 -- ============================================================
 CREATE TABLE insurance_product_categories (
-  id          BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  id          BIGINT UNSIGNED NOT NULL PRIMARY KEY, -- snowflake 主键,应用层 idgen_rs 生成
   parent_id   BIGINT UNSIGNED NULL,     -- 父分类,根为 NULL
   name        VARCHAR(64)   NOT NULL,
   slug        VARCHAR(64)   NOT NULL,
@@ -136,7 +136,7 @@ CREATE TABLE insurance_product_categories (
 -- 6. insurance_product_category_rel 产品-分类(多对多)
 -- ============================================================
 CREATE TABLE insurance_product_category_rel (
-  id          BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  id          BIGINT UNSIGNED NOT NULL PRIMARY KEY, -- snowflake 主键,应用层 idgen_rs 生成
   product_id  BIGINT UNSIGNED NOT NULL,
   category_id BIGINT UNSIGNED NOT NULL,
   created_at  DATETIME(3)   NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
@@ -152,7 +152,7 @@ CREATE TABLE insurance_product_category_rel (
 -- 7. quotes 报价 / 投保方案
 -- ============================================================
 CREATE TABLE quotes (
-  id                 BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  id                 BIGINT UNSIGNED NOT NULL PRIMARY KEY, -- snowflake 主键,应用层 idgen_rs 生成
   quote_no           VARCHAR(32)   NOT NULL,          -- 报价单号
   product_id         BIGINT UNSIGNED NOT NULL,
   user_id            BIGINT UNSIGNED NOT NULL,        -- 投保人账户
@@ -190,7 +190,7 @@ CREATE TABLE quotes (
 -- 8. quotes_beneficiaries 报价期受益人快照
 -- ============================================================
 CREATE TABLE quotes_beneficiaries (
-  id           BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  id           BIGINT UNSIGNED NOT NULL PRIMARY KEY, -- snowflake 主键,应用层 idgen_rs 生成
   quote_id     BIGINT UNSIGNED NOT NULL,
   name         VARCHAR(64)   NOT NULL,
   id_card_enc  VARBINARY(1024) NULL,
@@ -208,7 +208,7 @@ CREATE TABLE quotes_beneficiaries (
 -- 9. orders 订单
 -- ============================================================
 CREATE TABLE orders (
-  id            BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  id            BIGINT UNSIGNED NOT NULL PRIMARY KEY, -- snowflake 主键,应用层 idgen_rs 生成
   order_no      VARCHAR(32)   NOT NULL,             -- 订单号
   quote_id      BIGINT UNSIGNED NOT NULL,
   user_id       BIGINT UNSIGNED NOT NULL,           -- 下单人
@@ -243,7 +243,7 @@ CREATE TABLE orders (
 -- 10. payments 支付流水
 -- ============================================================
 CREATE TABLE payments (
-  id              BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  id              BIGINT UNSIGNED NOT NULL PRIMARY KEY, -- snowflake 主键,应用层 idgen_rs 生成
   payment_no      VARCHAR(32)   NOT NULL,            -- 支付流水号
   order_id        BIGINT UNSIGNED NOT NULL,
   user_id         BIGINT UNSIGNED NOT NULL,
@@ -273,7 +273,7 @@ CREATE TABLE payments (
 -- 11. policies 保单
 -- ============================================================
 CREATE TABLE policies (
-  id                  BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  id                  BIGINT UNSIGNED NOT NULL PRIMARY KEY, -- snowflake 主键,应用层 idgen_rs 生成
   policy_no           VARCHAR(32)   NOT NULL,          -- 保单号,对外展示
   order_id            BIGINT UNSIGNED NOT NULL,
   quote_id            BIGINT UNSIGNED NOT NULL,
@@ -313,7 +313,7 @@ CREATE TABLE policies (
 -- 12. policy_beneficiaries 保单受益人(占比)
 -- ============================================================
 CREATE TABLE policy_beneficiaries (
-  id           BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  id           BIGINT UNSIGNED NOT NULL PRIMARY KEY, -- snowflake 主键,应用层 idgen_rs 生成
   policy_id    BIGINT UNSIGNED NOT NULL,
   name         VARCHAR(64)   NOT NULL,
   id_card_enc  VARBINARY(1024) NULL,
@@ -332,7 +332,7 @@ CREATE TABLE policy_beneficiaries (
 -- 13. contracts 电子合同
 -- ============================================================
 CREATE TABLE contracts (
-  id            BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  id            BIGINT UNSIGNED NOT NULL PRIMARY KEY, -- snowflake 主键,应用层 idgen_rs 生成
   contract_no   VARCHAR(32)   NOT NULL,             -- 合同号
   policy_id     BIGINT UNSIGNED NOT NULL,
   order_id      BIGINT UNSIGNED NOT NULL,
@@ -359,7 +359,7 @@ CREATE TABLE contracts (
 -- 14. contract_signers 合同签署方
 -- ============================================================
 CREATE TABLE contract_signers (
-  id            BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  id            BIGINT UNSIGNED NOT NULL PRIMARY KEY, -- snowflake 主键,应用层 idgen_rs 生成
   contract_id   BIGINT UNSIGNED NOT NULL,
   user_id       BIGINT UNSIGNED NULL,               -- 登录用户签署
   name          VARCHAR(64)   NOT NULL,             -- 签署人姓名
@@ -383,7 +383,7 @@ CREATE TABLE contract_signers (
 -- 15. claims 理赔
 -- ============================================================
 CREATE TABLE claims (
-  id              BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  id              BIGINT UNSIGNED NOT NULL PRIMARY KEY, -- snowflake 主键,应用层 idgen_rs 生成
   claim_no        VARCHAR(32)   NOT NULL,            -- 理赔单号
   policy_id       BIGINT UNSIGNED NOT NULL,
   order_id        BIGINT UNSIGNED NOT NULL,
@@ -415,7 +415,7 @@ CREATE TABLE claims (
 -- 16. search_sync_logs DB→OpenSearch 同步队列
 -- ============================================================
 CREATE TABLE search_sync_logs (
-  id            BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  id            BIGINT UNSIGNED NOT NULL PRIMARY KEY, -- snowflake 主键,应用层 idgen_rs 生成
   entity_type   VARCHAR(32)   NOT NULL,   -- PRODUCT / CLAUSE / POLICY
   entity_id     BIGINT UNSIGNED NOT NULL, -- 业务实体主键
   op            VARCHAR(16)   NOT NULL,   -- UPSERT / DELETE
@@ -436,7 +436,7 @@ CREATE TABLE search_sync_logs (
 -- 17. audit_logs 操作审计
 -- ============================================================
 CREATE TABLE audit_logs (
-  id           BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  id           BIGINT UNSIGNED NOT NULL PRIMARY KEY, -- snowflake 主键,应用层 idgen_rs 生成
   user_id      BIGINT UNSIGNED NULL,             -- 操作人
   action       VARCHAR(64)   NOT NULL,           -- ORDER_PAY / POLICY_ISSUE / CONTRACT_SIGN ...
   entity_type  VARCHAR(32)   NOT NULL,           -- ORDER / POLICY / CONTRACT / PAYMENT ...
@@ -457,7 +457,7 @@ CREATE TABLE audit_logs (
 -- 15. claim_documents 理赔资料（v1.6.0 C3）
 -- ============================================================
 CREATE TABLE claim_documents (
-  id         BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  id         BIGINT UNSIGNED NOT NULL PRIMARY KEY, -- snowflake 主键,应用层 idgen_rs 生成
   claim_id   BIGINT UNSIGNED NOT NULL,
   doc_type   VARCHAR(32)  NOT NULL,
   file_name  VARCHAR(255) NOT NULL,
@@ -471,7 +471,7 @@ CREATE TABLE claim_documents (
 -- 16. quote_rates 报价费率表（v1.6.0 C4，整期保费系数 premium=保额×rate）
 -- ============================================================
 CREATE TABLE quote_rates (
-  id          BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  id          BIGINT UNSIGNED NOT NULL PRIMARY KEY, -- snowflake 主键,应用层 idgen_rs 生成
   product_id  BIGINT UNSIGNED NOT NULL,
   term_months INT           NOT NULL,              -- 保障期（月）匹配维度
   amount_min  DECIMAL(14,2) NOT NULL DEFAULT 0,    -- 保额下限（含）

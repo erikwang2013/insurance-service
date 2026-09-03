@@ -99,8 +99,10 @@ impl ClaimService {
                         return Err(AppError::Forbidden);
                     }
 
-                    // 2) INSERT claim
+                    // 2) INSERT claim（主键由应用层 snowflake 预生成后显式插入，见 idgen）
+                    let id = crate::utils::idgen::next_id();
                     let params: Vec<Value> = vec![
+                        id.into(),
                         Value::from(&claim_no),
                         Value::from(req.policy_id),
                         Value::from(order_id),
@@ -117,16 +119,16 @@ impl ClaimService {
 
                     tx.exec_drop(
                         "INSERT INTO claims \
-                         (claim_no, policy_id, order_id, user_id, accident_date, \
+                         (id, claim_no, policy_id, order_id, user_id, accident_date, \
                           accident_type, accident_desc, claim_amount, status, \
                           submitted_at, created_at, updated_at) \
-                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                         params,
                     )
                     .await
                     .map_err(db_error)?;
 
-                    Ok(tx.last_insert_id().unwrap_or_default() as i64)
+                    Ok(id)
                 })
             })
             .await?;
@@ -307,9 +309,12 @@ impl ClaimService {
         self.check_claim_access(claim_id, req.user_id).await?;
 
         let mut conn = self.db.conn().await?;
+        // 主键由应用层 snowflake 预生成后显式插入（全库自增迁移，见 idgen）
+        let doc_id = crate::utils::idgen::next_id();
         conn.exec_drop(
-            "INSERT INTO claim_documents (claim_id, doc_type, file_name, file_key) VALUES (?, ?, ?, ?)",
+            "INSERT INTO claim_documents (id, claim_id, doc_type, file_name, file_key) VALUES (?, ?, ?, ?, ?)",
             vec![
+                doc_id.into(),
                 Value::from(claim_id),
                 Value::from(doc_type),
                 Value::from(file_name),
@@ -318,7 +323,6 @@ impl ClaimService {
         )
         .await
         .map_err(db_error)?;
-        let doc_id = conn.last_insert_id().unwrap_or_default() as i64;
 
         let row: Option<Row> = conn
             .exec_first(

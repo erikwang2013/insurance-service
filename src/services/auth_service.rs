@@ -177,7 +177,10 @@ impl AuthService {
                     if exists.is_some() {
                         return Err(AppError::business("用户名已存在"));
                     }
+                    // 主键由应用层 snowflake 预生成后显式插入（全库自增迁移，见 idgen）
+                    let id = crate::utils::idgen::next_id();
                     let params: Vec<Value> = vec![
+                        id.into(),
                         username.into(),
                         password_hash.into(),
                         phone_enc.into(),
@@ -187,14 +190,14 @@ impl AuthService {
                     ];
                     tx.exec_drop(
                         "INSERT INTO users \
-                         (username, password_hash, phone_enc, phone_masked, role, status, \
+                         (id, username, password_hash, phone_enc, phone_masked, role, status, \
                           created_at, updated_at) \
-                         VALUES (?, ?, ?, ?, ?, ?, NOW(), NOW())",
+                         VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), NOW())",
                         params,
                     )
                     .await
                     .map_err(db_error)?;
-                    Ok(tx.last_insert_id().unwrap_or_default() as i64)
+                    Ok(id)
                 })
             })
             .await?;

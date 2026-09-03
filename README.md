@@ -10,9 +10,9 @@
 |------|-----|
 | 语言 / 版本 | Rust 2024 edition（rust-version ≥ 1.87） |
 | 许可证 | Apache-2.0 |
-| 版本 | 1.6.0 |
+| 版本 | 1.7.0 |
 | HTTP 框架 | axum 0.8 + bee_rust（bee_router / bee_orm / 过滤器管线） |
-| 存储 | MySQL 8.4（业务库）· Redis / 内存缓存（会话）· OpenSearch（搜索，可选） |
+| 存储 | MySQL 8.4（业务库，表主键由应用层 idgen_rs snowflake 生成）· Redis / 内存缓存（会话）· OpenSearch（搜索，可选） |
 
 <p align="center">
   <img src="docs/mascot.svg" width="120" height="120" alt="吉祥物安安——守护熊猫" />
@@ -53,6 +53,7 @@
 - **运营 / 审计**：运营后台 API、`audit_logs` 全量留痕 + 审计查询接口（`/api/v1/admin/audit-logs`，OPERATOR / ADMIN）。
 - **运营 / 审计（规划）**：运营后台 API、`audit_log` 全量留痕。
 - **横切能力**：入站安全扫描、参数化查询、AES-256-GCM 敏感字段加密、令牌精确过期（leeway=0）、
+  snowflake 分布式主键（idgen_rs 无锁生成，worker 位长 6 + 序列位长 6，worker_id 经 `IDGEN_WORKER_ID` 配置）、
   全链路 `trace_id`、统一响应信封（`{code, message, data}`，业务错误 `40000`）。
 
 ## 请求生命周期
@@ -164,7 +165,7 @@ cargo test           # 全部测试（单元 + 集成）
 ```
 
 - 依赖 MySQL 的集成测试在未配置 `DATABASE_URL` 或未执行 `install.sql` 时会打印 `SKIP` 并跳过，
-  保证无库环境 `cargo test` 不失败（v1.6.0 全量 128 项全绿：单元 13 + 集成 115）。集成测试覆盖：
+  保证无库环境 `cargo test` 不失败（v1.7.0 全量 129 项全绿：单元 14 + 集成 115）。集成测试覆盖：
   认证（微信绑定/未配置降级/令牌吊销）、API 鉴权 E2E、交易闭环（报价→订单→支付回调→保单签发）、
   保单生命周期（续保/退保/受益人批改）、限流、用户中心（改密/换绑）、运营统计、费率报价、
   理赔（资料上传）、审计查询、商品、修复回归等。

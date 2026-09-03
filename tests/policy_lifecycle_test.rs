@@ -44,16 +44,17 @@ fn svc(db: &Db) -> PolicyService {
     PolicyService::new(db.clone())
 }
 
-/// 插入一个测试用户，返回自增 id。
+/// 插入一个测试用户，返回 snowflake id。
 async fn insert_user(db: &Db, username: &str) -> i64 {
     let mut conn = db.conn().await.expect("连接测试库");
+    let id = insurance_service::utils::idgen::next_id();
     conn.exec_drop(
-        "INSERT INTO users (username, password_hash) VALUES (?, ?)",
-        vec![Value::from(username), Value::from("test-hash")],
+        "INSERT INTO users (id, username, password_hash) VALUES (?, ?, ?)",
+        vec![Value::from(id), Value::from(username), Value::from("test-hash")],
     )
     .await
     .expect("插入用户");
-    conn.last_insert_id().expect("取得自增 id") as i64
+    id
 }
 
 /// 按 FK 顺序插入 用户 → 产品 → 报价 → 订单。
@@ -62,9 +63,11 @@ async fn insert_chain(db: &Db, username: &str) -> Chain {
     let user_id = insert_user(db, username).await;
 
     let product_code = common::unique("lpc");
+    let product_id = insurance_service::utils::idgen::next_id();
     conn.exec_drop(
-        "INSERT INTO insurance_products (product_code, name, product_type) VALUES (?, ?, ?)",
+        "INSERT INTO insurance_products (id, product_code, name, product_type) VALUES (?, ?, ?, ?)",
         vec![
+            Value::from(product_id),
             Value::from(&product_code),
             Value::from("测试产品"),
             Value::from("HEALTH"),
@@ -72,13 +75,14 @@ async fn insert_chain(db: &Db, username: &str) -> Chain {
     )
     .await
     .expect("插入产品");
-    let product_id = conn.last_insert_id().expect("取得自增 id") as i64;
 
     let quote_no = common::unique("lq");
+    let quote_id = insurance_service::utils::idgen::next_id();
     conn.exec_drop(
-        "INSERT INTO quotes (quote_no, product_id, user_id, insurance_amount, term_months, premium, expires_at) \
-         VALUES (?, ?, ?, ?, ?, ?, DATE_ADD(NOW(), INTERVAL 7 DAY))",
+        "INSERT INTO quotes (id, quote_no, product_id, user_id, insurance_amount, term_months, premium, expires_at) \
+         VALUES (?, ?, ?, ?, ?, ?, ?, DATE_ADD(NOW(), INTERVAL 7 DAY))",
         vec![
+            Value::from(quote_id),
             Value::from(&quote_no),
             Value::from(product_id),
             Value::from(user_id),
@@ -89,15 +93,16 @@ async fn insert_chain(db: &Db, username: &str) -> Chain {
     )
     .await
     .expect("插入报价");
-    let quote_id = conn.last_insert_id().expect("取得自增 id") as i64;
 
     let order_no = common::unique("lo");
+    let order_id = insurance_service::utils::idgen::next_id();
     conn.exec_drop(
         "INSERT INTO orders \
-           (order_no, quote_id, user_id, product_id, product_name, holder_name, \
+           (id, order_no, quote_id, user_id, product_id, product_name, holder_name, \
             insurance_amount, term_months, total_amount, payable_amount) \
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         vec![
+            Value::from(order_id),
             Value::from(&order_no),
             Value::from(quote_id),
             Value::from(user_id),
@@ -112,7 +117,6 @@ async fn insert_chain(db: &Db, username: &str) -> Chain {
     )
     .await
     .expect("插入订单");
-    let order_id = conn.last_insert_id().expect("取得自增 id") as i64;
 
     Chain { username: username.to_string(), product_code, quote_no, order_no, user_id, order_id, quote_id }
 }
@@ -128,13 +132,15 @@ async fn insert_policy(
 ) -> TestPolicy {
     let mut conn = db.conn().await.expect("连接测试库");
     let policy_no = common::unique("lpn");
+    let id = insurance_service::utils::idgen::next_id();
     conn.exec_drop(
         "INSERT INTO policies \
-           (policy_no, order_id, quote_id, user_id, product_id, product_name, holder_name, \
+           (id, policy_no, order_id, quote_id, user_id, product_id, product_name, holder_name, \
             insurance_amount, premium, term_months, effective_date, expire_date, \
             status, issue_type, is_renewable) \
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         vec![
+            Value::from(id),
             Value::from(&policy_no),
             Value::from(c.order_id),
             Value::from(c.quote_id),
@@ -154,7 +160,6 @@ async fn insert_policy(
     )
     .await
     .expect("插入保单");
-    let id = conn.last_insert_id().expect("取得自增 id") as i64;
     TestPolicy { id, policy_no }
 }
 

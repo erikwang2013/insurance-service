@@ -18,16 +18,22 @@ use insurance_service::services::product_service::{
 use mysql_async::prelude::Queryable;
 use mysql_async::Value;
 
-/// 插入一个指定角色的测试用户（role: USER / OPERATOR / ADMIN），返回自增 id。
+/// 插入一个指定角色的测试用户（role: USER / OPERATOR / ADMIN），返回预生成 id。
 async fn insert_user(db: &Db, username: &str, role: &str) -> i64 {
     let mut conn = db.conn().await.expect("连接测试库");
+    let user_id = insurance_service::utils::idgen::next_id();
     conn.exec_drop(
-        "INSERT INTO users (username, password_hash, role) VALUES (?, ?, ?)",
-        vec![Value::from(username), Value::from("test-hash"), Value::from(role)],
+        "INSERT INTO users (id, username, password_hash, role) VALUES (?, ?, ?, ?)",
+        vec![
+            Value::from(user_id),
+            Value::from(username),
+            Value::from("test-hash"),
+            Value::from(role),
+        ],
     )
     .await
     .expect("插入用户");
-    conn.last_insert_id().expect("取得自增 id") as i64
+    user_id
 }
 
 /// 构造建档/更新请求（status 缺省走服务层 DRAFT 默认）

@@ -30,12 +30,14 @@ struct Chain {
     policy_no: String,
 }
 
-/// 插入指定角色的测试用户，返回自增 id。
+/// 插入指定角色的测试用户，返回 snowflake id。
 async fn insert_user(db: &Db, username: &str, role: &str) -> i64 {
     let mut conn = db.conn().await.expect("连接测试库");
+    let user_id = insurance_service::utils::idgen::next_id();
     conn.exec_drop(
-        "INSERT INTO users (username, password_hash, role) VALUES (?, ?, ?)",
+        "INSERT INTO users (id, username, password_hash, role) VALUES (?, ?, ?, ?)",
         vec![
+            Value::from(user_id),
             Value::from(username),
             Value::from("test-hash"),
             Value::from(role),
@@ -43,16 +45,18 @@ async fn insert_user(db: &Db, username: &str, role: &str) -> i64 {
     )
     .await
     .expect("插入用户");
-    conn.last_insert_id().expect("取得自增 id") as i64
+    user_id
 }
 
-/// 插入产品（status 显式指定），返回自增 id。
+/// 插入产品（status 显式指定），返回 snowflake id。
 async fn insert_product(db: &Db, product_code: &str, status: &str) -> i64 {
     let mut conn = db.conn().await.expect("连接测试库");
+    let product_id = insurance_service::utils::idgen::next_id();
     conn.exec_drop(
-        "INSERT INTO insurance_products (product_code, name, product_type, status) \
-         VALUES (?, ?, ?, ?)",
+        "INSERT INTO insurance_products (id, product_code, name, product_type, status) \
+         VALUES (?, ?, ?, ?, ?)",
         vec![
+            Value::from(product_id),
             Value::from(product_code),
             Value::from("统计测试产品"),
             Value::from("HEALTH"),
@@ -61,7 +65,7 @@ async fn insert_product(db: &Db, product_code: &str, status: &str) -> i64 {
     )
     .await
     .expect("插入产品");
-    conn.last_insert_id().expect("取得自增 id") as i64
+    product_id
 }
 
 /// 按 FK 顺序插入 用户 → 产品 → 报价 → 订单（order_status 显式）→ 保单。
@@ -70,9 +74,11 @@ async fn insert_chain(db: &Db, username: &str, order_status: &str) -> Chain {
     let mut conn = db.conn().await.expect("连接测试库");
 
     let product_code = common::unique("sp");
+    let product_id = insurance_service::utils::idgen::next_id();
     conn.exec_drop(
-        "INSERT INTO insurance_products (product_code, name, product_type) VALUES (?, ?, ?)",
+        "INSERT INTO insurance_products (id, product_code, name, product_type) VALUES (?, ?, ?, ?)",
         vec![
+            Value::from(product_id),
             Value::from(&product_code),
             Value::from("测试产品"),
             Value::from("HEALTH"),
@@ -80,13 +86,14 @@ async fn insert_chain(db: &Db, username: &str, order_status: &str) -> Chain {
     )
     .await
     .expect("插入产品");
-    let product_id = conn.last_insert_id().expect("取得自增 id") as i64;
 
     let quote_no = common::unique("sq");
+    let quote_id = insurance_service::utils::idgen::next_id();
     conn.exec_drop(
-        "INSERT INTO quotes (quote_no, product_id, user_id, insurance_amount, term_months, premium, expires_at) \
-         VALUES (?, ?, ?, ?, ?, ?, DATE_ADD(NOW(), INTERVAL 7 DAY))",
+        "INSERT INTO quotes (id, quote_no, product_id, user_id, insurance_amount, term_months, premium, expires_at) \
+         VALUES (?, ?, ?, ?, ?, ?, ?, DATE_ADD(NOW(), INTERVAL 7 DAY))",
         vec![
+            Value::from(quote_id),
             Value::from(&quote_no),
             Value::from(product_id),
             Value::from(user_id),
@@ -97,15 +104,16 @@ async fn insert_chain(db: &Db, username: &str, order_status: &str) -> Chain {
     )
     .await
     .expect("插入报价");
-    let quote_id = conn.last_insert_id().expect("取得自增 id") as i64;
 
     let order_no = common::unique("so");
+    let order_id = insurance_service::utils::idgen::next_id();
     conn.exec_drop(
         "INSERT INTO orders \
-           (order_no, quote_id, user_id, product_id, product_name, holder_name, \
+           (id, order_no, quote_id, user_id, product_id, product_name, holder_name, \
             insurance_amount, term_months, total_amount, payable_amount, status) \
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         vec![
+            Value::from(order_id),
             Value::from(&order_no),
             Value::from(quote_id),
             Value::from(user_id),
@@ -121,15 +129,15 @@ async fn insert_chain(db: &Db, username: &str, order_status: &str) -> Chain {
     )
     .await
     .expect("插入订单");
-    let order_id = conn.last_insert_id().expect("取得自增 id") as i64;
 
     let policy_no = common::unique("spn");
     conn.exec_drop(
         "INSERT INTO policies \
-           (policy_no, order_id, quote_id, user_id, product_id, product_name, holder_name, \
+           (id, policy_no, order_id, quote_id, user_id, product_id, product_name, holder_name, \
             insurance_amount, premium, term_months, effective_date, expire_date) \
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         vec![
+            Value::from(insurance_service::utils::idgen::next_id()),
             Value::from(&policy_no),
             Value::from(order_id),
             Value::from(quote_id),
@@ -160,9 +168,10 @@ async fn insert_chain(db: &Db, username: &str, order_status: &str) -> Chain {
 async fn insert_payment(db: &Db, order_id: i64, user_id: i64, amount: &str, status: &str) {
     let mut conn = db.conn().await.expect("连接测试库");
     conn.exec_drop(
-        "INSERT INTO payments (payment_no, order_id, user_id, amount, channel, status) \
-         VALUES (?, ?, ?, ?, 'MOCK', ?)",
+        "INSERT INTO payments (id, payment_no, order_id, user_id, amount, channel, status) \
+         VALUES (?, ?, ?, ?, ?, 'MOCK', ?)",
         vec![
+            Value::from(insurance_service::utils::idgen::next_id()),
             Value::from(common::unique("spy")),
             Value::from(order_id),
             Value::from(user_id),
@@ -179,9 +188,10 @@ async fn insert_claim(db: &Db, policy_id: i64, order_id: i64, user_id: i64) -> S
     let claim_no = common::unique("scl");
     let mut conn = db.conn().await.expect("连接测试库");
     conn.exec_drop(
-        "INSERT INTO claims (claim_no, policy_id, order_id, user_id, claim_amount) \
-         VALUES (?, ?, ?, ?, ?)",
+        "INSERT INTO claims (id, claim_no, policy_id, order_id, user_id, claim_amount) \
+         VALUES (?, ?, ?, ?, ?, ?)",
         vec![
+            Value::from(insurance_service::utils::idgen::next_id()),
             Value::from(&claim_no),
             Value::from(policy_id),
             Value::from(order_id),

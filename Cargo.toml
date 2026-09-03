@@ -3,7 +3,7 @@ resolver = "2"
 members = ["."]            # 单 crate；后续可按需拆分 crates/
 
 [workspace.package]
-version = "1.6.0"
+version = "1.7.0"
 edition = "2024"
 license = "Apache-2.0"
 rust-version = "1.87"
@@ -26,6 +26,8 @@ aes-gcm = "0.10"
 argon2 = "0.5"               # 密码哈希
 uuid = { version = "1", features = ["v4"] }
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+# idgen_rs：snowflake 主键生成（0.2.0 为 AtomicU64 lock-free；网络拉取失败时降级 0.1.6）
+idgen_rs = "0.2"
 
 # bee-rust（v1.0.6，git 依赖，锁定 rev 保证可复现）
 # 注意：2026-09-01 起 GitHub git 协议（clone/ls-remote）在本机间歇性超时，但 codeload
@@ -49,7 +51,7 @@ mysql_async = { version = "0.34", features = ["chrono"] }
 
 [package]
 name = "insurance-service"
-version = "1.6.0"
+version = "1.7.0"
 edition = "2024"
 rust-version = "1.87"
 description = "保险服务平台后端（bee-rust 阶段 0 骨架）"
@@ -87,6 +89,7 @@ argon2 = { workspace = true }
 uuid = { workspace = true }
 reqwest = { workspace = true }
 mysql_async = { workspace = true }
+idgen_rs = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true }

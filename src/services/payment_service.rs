@@ -73,12 +73,15 @@ impl PaymentService {
 
                     let now = Utc::now();
                     let dt = now.format("%Y-%m-%d %H:%M:%S").to_string();
+                    // 主键由应用层 snowflake 预生成后显式插入（全库自增迁移，见 idgen）
+                    let pid = crate::utils::idgen::next_id();
                     tx.exec_drop(
-                        "INSERT INTO payments (payment_no, order_id, user_id, amount, currency, \
+                        "INSERT INTO payments (id, payment_no, order_id, user_id, amount, currency, \
                          channel, provider, provider_tx_id, status, prepay_payload, callback_payload, \
                          created_at, updated_at) \
-                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                         vec![
+                            pid.into(),
                             Value::from(&payment_no),
                             Value::from(req.order_id),
                             Value::from(req.user_id),
@@ -96,7 +99,6 @@ impl PaymentService {
                     )
                     .await
                     .map_err(db_error)?;
-                    let pid = tx.last_insert_id().unwrap_or_default() as i64;
                     tx.exec_first("SELECT * FROM payments WHERE id = ? LIMIT 1", vec![pid])
                         .await
                         .map_err(db_error)

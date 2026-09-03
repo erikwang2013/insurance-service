@@ -210,7 +210,10 @@ pub async fn admin_upsert(db: &Db, req: &AdminUpsertReq) -> Result<InsuranceProd
         )
         .await?;
     } else {
+        // 主键由应用层 snowflake 预生成后显式插入（全库自增迁移，见 idgen）
+        let id = crate::utils::idgen::next_id();
         let params: Vec<Value> = vec![
+            id.into(),
             Value::from(&req.product_code),
             Value::from(&req.name),
             value_opt_str(req.subtitle.clone()),
@@ -232,11 +235,11 @@ pub async fn admin_upsert(db: &Db, req: &AdminUpsertReq) -> Result<InsuranceProd
         ];
         db.exec_drop(
             "INSERT INTO insurance_products \
-             (product_code, name, subtitle, description, product_type, sale_channel, \
+             (id, product_code, name, subtitle, description, product_type, sale_channel, \
               operator_user_id, insurer_name, currency, min_amount, max_amount, \
               min_term_months, max_term_months, waiting_period_days, is_featured, \
               cover_image_url, status, search_enabled) \
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             params,
         )
         .await?;

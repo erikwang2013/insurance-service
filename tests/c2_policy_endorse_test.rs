@@ -32,16 +32,21 @@ struct Chain {
     policy_id: i64,
 }
 
-/// 插入一个测试用户，返回自增 id。
+/// 插入一个测试用户，返回预生成 id。
 async fn insert_user(db: &Db, username: &str) -> i64 {
     let mut conn = db.conn().await.expect("连接测试库");
+    let user_id = insurance_service::utils::idgen::next_id();
     conn.exec_drop(
-        "INSERT INTO users (username, password_hash) VALUES (?, ?)",
-        vec![Value::from(username), Value::from("test-hash")],
+        "INSERT INTO users (id, username, password_hash) VALUES (?, ?, ?)",
+        vec![
+            Value::from(user_id),
+            Value::from(username),
+            Value::from("test-hash"),
+        ],
     )
     .await
     .expect("插入用户");
-    conn.last_insert_id().expect("取得自增 id") as i64
+    user_id
 }
 
 /// 按 FK 顺序插入 用户 → 产品 → 报价 → 订单 → 保单，生成一条最小保单链（默认 PENDING_ISSUE）。
@@ -50,9 +55,11 @@ async fn insert_chain(db: &Db, username: &str) -> Chain {
     let user_id = insert_user(db, username).await;
 
     let product_code = common::unique("ep");
+    let product_id = insurance_service::utils::idgen::next_id();
     conn.exec_drop(
-        "INSERT INTO insurance_products (product_code, name, product_type) VALUES (?, ?, ?)",
+        "INSERT INTO insurance_products (id, product_code, name, product_type) VALUES (?, ?, ?, ?)",
         vec![
+            Value::from(product_id),
             Value::from(&product_code),
             Value::from("测试产品"),
             Value::from("HEALTH"),
@@ -60,13 +67,14 @@ async fn insert_chain(db: &Db, username: &str) -> Chain {
     )
     .await
     .expect("插入产品");
-    let product_id = conn.last_insert_id().expect("取得自增 id") as i64;
 
     let quote_no = common::unique("eq");
+    let quote_id = insurance_service::utils::idgen::next_id();
     conn.exec_drop(
-        "INSERT INTO quotes (quote_no, product_id, user_id, insurance_amount, term_months, premium, expires_at) \
-         VALUES (?, ?, ?, ?, ?, ?, DATE_ADD(NOW(), INTERVAL 7 DAY))",
+        "INSERT INTO quotes (id, quote_no, product_id, user_id, insurance_amount, term_months, premium, expires_at) \
+         VALUES (?, ?, ?, ?, ?, ?, ?, DATE_ADD(NOW(), INTERVAL 7 DAY))",
         vec![
+            Value::from(quote_id),
             Value::from(&quote_no),
             Value::from(product_id),
             Value::from(user_id),
@@ -77,15 +85,16 @@ async fn insert_chain(db: &Db, username: &str) -> Chain {
     )
     .await
     .expect("插入报价");
-    let quote_id = conn.last_insert_id().expect("取得自增 id") as i64;
 
     let order_no = common::unique("eo");
+    let order_id = insurance_service::utils::idgen::next_id();
     conn.exec_drop(
         "INSERT INTO orders \
-           (order_no, quote_id, user_id, product_id, product_name, holder_name, \
+           (id, order_no, quote_id, user_id, product_id, product_name, holder_name, \
             insurance_amount, term_months, total_amount, payable_amount) \
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         vec![
+            Value::from(order_id),
             Value::from(&order_no),
             Value::from(quote_id),
             Value::from(user_id),
@@ -100,15 +109,16 @@ async fn insert_chain(db: &Db, username: &str) -> Chain {
     )
     .await
     .expect("插入订单");
-    let order_id = conn.last_insert_id().expect("取得自增 id") as i64;
 
     let policy_no = common::unique("epn");
+    let policy_id = insurance_service::utils::idgen::next_id();
     conn.exec_drop(
         "INSERT INTO policies \
-           (policy_no, order_id, quote_id, user_id, product_id, product_name, holder_name, \
+           (id, policy_no, order_id, quote_id, user_id, product_id, product_name, holder_name, \
             insurance_amount, premium, term_months, effective_date, expire_date) \
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         vec![
+            Value::from(policy_id),
             Value::from(&policy_no),
             Value::from(order_id),
             Value::from(quote_id),
@@ -125,7 +135,6 @@ async fn insert_chain(db: &Db, username: &str) -> Chain {
     )
     .await
     .expect("插入保单");
-    let policy_id = conn.last_insert_id().expect("取得自增 id") as i64;
 
     Chain {
         username: username.to_string(),
@@ -213,9 +222,13 @@ async fn endorse_succeeds_swaps_beneficiaries_and_audits() {
     // 预置一名旧受益人（旧快照应以 JSON 数组入审计 before_json）
     let mut conn = db.conn().await.expect("连接测试库");
     conn.exec_drop(
-        "INSERT INTO policy_beneficiaries (policy_id, name, beneficiary_type, sort_order) \
-         VALUES (?, ?, 'LEGAL', 0)",
-        vec![Value::from(chain.policy_id), Value::from("旧受益人甲")],
+        "INSERT INTO policy_beneficiaries (id, policy_id, name, beneficiary_type, sort_order) \
+         VALUES (?, ?, ?, 'LEGAL', 0)",
+        vec![
+            Value::from(insurance_service::utils::idgen::next_id()),
+            Value::from(chain.policy_id),
+            Value::from("旧受益人甲"),
+        ],
     )
     .await
     .expect("预置旧受益人");

@@ -84,17 +84,19 @@ fn parse_envelope(bytes: &[u8]) -> ResponseEnvelope<Value> {
 // 数据构造 helper（先插后删）
 // ---------------------------------------------------------------------------
 
-/// 插入商品，返回自增 id（与 product_service_test.rs 同构）
+/// 插入商品，返回预生成 id（与 product_service_test.rs 同构）
 async fn insert_product(db: &Db, code: &str, name: &str, status: &str, featured: u8) -> i64 {
     let mut conn = db.conn().await.expect("连接测试库");
+    let product_id = insurance_service::utils::idgen::next_id();
     conn.exec_drop(
         "INSERT INTO insurance_products
-            (product_code, name, subtitle, description, product_type, sale_channel,
+            (id, product_code, name, subtitle, description, product_type, sale_channel,
              insurer_name, currency, min_amount, max_amount, min_term_months,
              max_term_months, waiting_period_days, is_featured, status, search_enabled,
              created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())",
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())",
         vec![
+            SqlValue::from(product_id),
             SqlValue::from(code),
             SqlValue::from(name),
             SqlValue::from(format!("{name} 副标题")),
@@ -115,17 +117,19 @@ async fn insert_product(db: &Db, code: &str, name: &str, status: &str, featured:
     )
     .await
     .expect("插入商品");
-    conn.last_insert_id().expect("取得自增 id") as i64
+    product_id
 }
 
-/// 插入一条条款，返回自增 id
+/// 插入一条条款，返回预生成 id
 async fn insert_clause(db: &Db, product_id: i64, title: &str, sort_order: i32) -> i64 {
     let mut conn = db.conn().await.expect("连接测试库");
+    let clause_id = insurance_service::utils::idgen::next_id();
     conn.exec_drop(
         "INSERT INTO insurance_product_clauses
-            (product_id, clause_type, title, content, sort_order)
-         VALUES (?, ?, ?, ?, ?)",
+            (id, product_id, clause_type, title, content, sort_order)
+         VALUES (?, ?, ?, ?, ?, ?)",
         vec![
+            SqlValue::from(clause_id),
             SqlValue::from(product_id),
             SqlValue::from("MAIN"),
             SqlValue::from(title),
@@ -135,7 +139,7 @@ async fn insert_clause(db: &Db, product_id: i64, title: &str, sort_order: i32) -
     )
     .await
     .expect("插入条款");
-    conn.last_insert_id().expect("取得自增 id") as i64
+    clause_id
 }
 
 /// 断言业务失败信封：code == expected_code

@@ -12,17 +12,19 @@ use insurance_service::services::product_service::{detail, list};
 use mysql_async::prelude::Queryable;
 use mysql_async::Value;
 
-/// 往 insurance_products 插入一行，返回生成的自增 id。
+/// 往 insurance_products 插入一行，返回预生成 id。
 async fn insert_product(db: &Db, code: &str, name: &str, status: &str, featured: u8) -> i64 {
     let mut conn = db.conn().await.expect("连接测试库");
+    let product_id = insurance_service::utils::idgen::next_id();
     conn.exec_drop(
         "INSERT INTO insurance_products
-            (product_code, name, subtitle, description, product_type, sale_channel,
+            (id, product_code, name, subtitle, description, product_type, sale_channel,
              insurer_name, currency, min_amount, max_amount, min_term_months,
              max_term_months, waiting_period_days, is_featured, status, search_enabled,
              created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())",
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())",
         vec![
+            Value::from(product_id),
             Value::from(code),
             Value::from(name),
             Value::from(format!("{name} 副标题")),
@@ -43,7 +45,7 @@ async fn insert_product(db: &Db, code: &str, name: &str, status: &str, featured:
     )
     .await
     .expect("插入商品");
-    conn.last_insert_id().expect("取得自增 id") as i64
+    product_id
 }
 
 #[tokio::test]

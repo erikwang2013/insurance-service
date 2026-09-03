@@ -1316,6 +1316,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b9e0384b61958566e926dc50660321d12159025e767c18e043daf26b70104c39"
 
 [[package]]
+name = "idgen_rs"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "60934c6a7f60af409f2060cc08ecf27d5fd0442fbebdb93287617ea74739823c"
+dependencies = [
+ "chrono",
+]
+
+[[package]]
 name = "idna"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1393,7 +1402,7 @@ dependencies = [
 
 [[package]]
 name = "insurance-service"
-version = "1.5.0"
+version = "1.6.0"
 dependencies = [
  "aes-gcm",
  "argon2",
@@ -1402,6 +1411,7 @@ dependencies = [
  "base64 0.22.1",
  "bee_rust",
  "chrono",
+ "idgen_rs",
  "jsonwebtoken",
  "mysql_async",
  "regex",

@@ -72,12 +72,15 @@ impl ContractService {
                     let dt = now.format("%Y-%m-%d %H:%M:%S").to_string();
                     let flow_id = format!("EFLOW{}", Uuid::new_v4());
 
+                    // 主键由应用层 snowflake 预生成后显式插入（全库自增迁移，见 idgen）
+                    let id = crate::utils::idgen::next_id();
                     tx.exec_drop(
-                        "INSERT INTO contracts (contract_no, policy_id, order_id, title, \
+                        "INSERT INTO contracts (id, contract_no, policy_id, order_id, title, \
                          contract_type, pdf_path, file_hash, sign_flow_id, provider, status, \
                          signed_at, created_at, updated_at) \
-                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                         vec![
+                            id.into(),
                             Value::from(&contract_no),
                             Value::from(req.policy_id),
                             Value::from(req.order_id),
@@ -96,8 +99,7 @@ impl ContractService {
                     .await
                     .map_err(db_error)?;
 
-                    let cid = tx.last_insert_id().unwrap_or_default() as i64;
-                    tx.exec_first("SELECT * FROM contracts WHERE id = ? LIMIT 1", vec![cid])
+                    tx.exec_first("SELECT * FROM contracts WHERE id = ? LIMIT 1", vec![id])
                         .await
                         .map_err(db_error)
                 })

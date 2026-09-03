@@ -104,13 +104,16 @@ impl PolicyService {
                     let ed = effective_date.format("%Y-%m-%d").to_string();
                     let xd = expire_date.format("%Y-%m-%d").to_string();
 
+                    // 主键由应用层 snowflake 预生成后显式插入（全库自增迁移，见 idgen）
+                    let id = crate::utils::idgen::next_id();
                     tx.exec_drop(
-                        "INSERT INTO policies (policy_no, order_id, quote_id, user_id, holder_id, \
+                        "INSERT INTO policies (id, policy_no, order_id, quote_id, user_id, holder_id, \
                          product_id, product_name, holder_name, insurance_amount, term_months, \
                          premium, effective_date, expire_date, status, issue_type, is_renewable, \
                          premium_detail, issued_at, created_at, updated_at) \
-                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                         vec![
+                            id.into(),
                             Value::from(&policy_no),
                             Value::from(req.order_id),
                             Value::from(req.quote_id),
@@ -136,9 +139,6 @@ impl PolicyService {
                     .await
                     .map_err(db_error)?;
 
-                    // 先取 INSERT 自增 id 再做 UPDATE：last_insert_id 读最近一次
-                    // OK 包，UPDATE 会把 insert_id 归零，晚取会拿到 0 导致回读落空。
-                    let pid = tx.last_insert_id().unwrap_or_default() as i64;
                     tx.exec_drop(
                         "UPDATE orders SET status = ? WHERE id = ? AND user_id = ?",
                         vec![
@@ -150,7 +150,7 @@ impl PolicyService {
                     .await
                     .map_err(db_error)?;
 
-                    tx.exec_first("SELECT * FROM policies WHERE id = ? LIMIT 1", vec![pid])
+                    tx.exec_first("SELECT * FROM policies WHERE id = ? LIMIT 1", vec![id])
                         .await
                         .map_err(db_error)
                 })
@@ -241,13 +241,16 @@ impl PolicyService {
                     let now = Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
                     let ed = effective.format("%Y-%m-%d").to_string();
                     let xd = expire.format("%Y-%m-%d").to_string();
+                    // 主键由应用层 snowflake 预生成后显式插入（全库自增迁移，见 idgen）
+                    let new_id = crate::utils::idgen::next_id();
                     tx.exec_drop(
-                        "INSERT INTO policies (policy_no, order_id, quote_id, user_id, holder_id, \
+                        "INSERT INTO policies (id, policy_no, order_id, quote_id, user_id, holder_id, \
                          product_id, product_name, holder_name, insurance_amount, term_months, \
                          premium, effective_date, expire_date, status, issue_type, is_renewable, \
                          premium_detail, issued_at, created_at, updated_at) \
-                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                         vec![
+                            new_id.into(),
                             Value::from(&policy_no),
                             Value::from(old.order_id),
                             Value::from(old.quote_id),
@@ -273,7 +276,7 @@ impl PolicyService {
                     .await
                     .map_err(db_error)?;
 
-                    Ok(tx.last_insert_id().unwrap_or_default() as i64)
+                    Ok(new_id)
                 })
             })
             .await?;
@@ -332,10 +335,13 @@ impl PolicyService {
                         "status": Policy::STATUS_SURRENDERED,
                         "reason": reason,
                     })));
+                    // 主键由应用层 snowflake 预生成后显式插入（全库自增迁移，见 idgen）
+                    let audit_id = crate::utils::idgen::next_id();
                     tx.exec_drop(
-                        "INSERT INTO audit_logs (user_id, action, entity_type, entity_id, \
-                         before_json, after_json) VALUES (?, ?, ?, ?, ?, ?)",
+                        "INSERT INTO audit_logs (id, user_id, action, entity_type, entity_id, \
+                         before_json, after_json) VALUES (?, ?, ?, ?, ?, ?, ?)",
                         vec![
+                            audit_id.into(),
                             Value::from(user_id),
                             Value::from(POLICY_ACTION_LAPSE),
                             Value::from("POLICY"),
@@ -385,10 +391,13 @@ impl PolicyService {
                 tx.exec_drop("DELETE FROM policy_beneficiaries WHERE policy_id = ?", vec![policy_id])
                     .await.map_err(db_error)?;
                 for (i, b) in req.beneficiaries.iter().enumerate() {
+                    // 主键由应用层 snowflake 预生成后显式插入（全库自增迁移，见 idgen）
+                    let id = crate::utils::idgen::next_id();
                     tx.exec_drop(
-                        "INSERT INTO policy_beneficiaries (policy_id, name, relationship, \
-                         beneficiary_type, share_percent, sort_order) VALUES (?, ?, ?, ?, ?, ?)",
+                        "INSERT INTO policy_beneficiaries (id, policy_id, name, relationship, \
+                         beneficiary_type, share_percent, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?)",
                         vec![
+                            id.into(),
                             Value::from(policy_id), Value::from(b.name.trim()),
                             b.relationship.clone().map(Value::from).unwrap_or(Value::NULL), Value::from(b.beneficiary_type()),
                             b.share_percent.map(|d| Value::from(d.to_string())).unwrap_or(Value::NULL), Value::from(i as i32),
@@ -396,10 +405,13 @@ impl PolicyService {
                     ).await.map_err(db_error)?;
                 }
                 let new_rows: Vec<Row> = tx.exec(sel_b, vec![policy_id]).await.map_err(db_error)?;
+                // 主键由应用层 snowflake 预生成后显式插入（全库自增迁移，见 idgen）
+                let audit_id = crate::utils::idgen::next_id();
                 tx.exec_drop(
-                    "INSERT INTO audit_logs (user_id, action, entity_type, entity_id, \
-                     before_json, after_json) VALUES (?, ?, ?, ?, ?, ?)",
+                    "INSERT INTO audit_logs (id, user_id, action, entity_type, entity_id, \
+                     before_json, after_json) VALUES (?, ?, ?, ?, ?, ?, ?)",
                     vec![
+                        audit_id.into(),
                         Value::from(user_id), Value::from(POLICY_ACTION_ENDORSE),
                         Value::from("POLICY"), Value::from(policy_id),
                         before, json_val(Some(bens_json(&new_rows))),

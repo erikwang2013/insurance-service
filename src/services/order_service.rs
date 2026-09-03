@@ -52,6 +52,9 @@ impl OrderService {
             .db
             .with_tx(|tx| {
                 Box::pin(async move {
+                    // 主键由应用层 snowflake 预生成后显式插入（全库自增迁移，见 idgen）
+                    let oid = crate::utils::idgen::next_id();
+
                     // 1) 校验 quote 存在且属于该用户
                     let q: Option<mysql_async::Row> = tx
                         .exec_first(
@@ -95,6 +98,7 @@ impl OrderService {
                     let remark_opt: Option<String> = req.remark.clone();
 
                     let params: Vec<Value> = vec![
+                        oid.into(),
                         Value::from(&order_no),
                         Value::from(req.quote_id),
                         Value::from(req.user_id),
@@ -115,17 +119,15 @@ impl OrderService {
 
                     tx.exec_drop(
                         "INSERT INTO orders \
-                         (order_no, quote_id, user_id, product_id, product_name, \
+                         (id, order_no, quote_id, user_id, product_id, product_name, \
                           holder_name, insurance_amount, term_months, total_amount, \
                           discount_amount, payable_amount, currency, status, remark, \
                           created_at, updated_at) \
-                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                         params,
                     )
                     .await
                     .map_err(db_error)?;
-
-                    let oid = tx.last_insert_id().unwrap_or_default() as i64;
 
                     // 4) 回读订单
                     tx.exec_first(

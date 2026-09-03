@@ -98,10 +98,11 @@ impl QuoteService {
         let expire_date_str: Option<String> =
             req.expire_date.map(|d| d.format("%Y-%m-%d").to_string());
 
-        let quote_id: i64;
+        // 主键由应用层 snowflake 预生成后显式插入（全库自增迁移，见 idgen）
+        let quote_id = crate::utils::idgen::next_id();
         let beneficiaries = req.beneficiaries.clone();
 
-        quote_id = self
+        self
             .db
             .with_tx(|tx| {
                 Box::pin(async move {
@@ -148,6 +149,7 @@ impl QuoteService {
 
                     // 2) INSERT quote
                     let params: Vec<Value> = vec![
+                        quote_id.into(),
                         Value::from(&quote_no),
                         Value::from(req.product_id),
                         Value::from(req.user_id),
@@ -168,22 +170,22 @@ impl QuoteService {
 
                     tx.exec_drop(
                         "INSERT INTO quotes \
-                         (quote_no, product_id, user_id, holder_name, holder_id_card_enc, \
+                         (id, quote_no, product_id, user_id, holder_name, holder_id_card_enc, \
                           insurance_amount, term_months, \
                           premium, premium_detail, effective_date, expire_date, \
                           health_declaration, risk_score, created_at, expires_at, status) \
-                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                         params,
                     )
                     .await
                     .map_err(db_error)?;
 
-                    let id = tx.last_insert_id().unwrap_or_default() as i64;
-
-                    // 3) 插入受益人
+                    // 3) 插入受益人（子表主键同样显式预生成，避免依赖父表回读）
                     for b in &beneficiaries {
+                        let bid = crate::utils::idgen::next_id();
                         let bparams: Vec<Value> = vec![
-                            Value::from(id),
+                            bid.into(),
+                            quote_id.into(),
                             Value::from(b.name.clone()),
                             value_opt_vec(b.id_card_enc.clone()),
                             value_opt_str(b.relationship.clone()),
@@ -193,16 +195,16 @@ impl QuoteService {
                         ];
                         tx.exec_drop(
                             "INSERT INTO quotes_beneficiaries \
-                             (quote_id, name, id_card_enc, relationship, beneficiary_type, \
+                             (id, quote_id, name, id_card_enc, relationship, beneficiary_type, \
                               share_percent, sort_order) \
-                             VALUES (?, ?, ?, ?, ?, ?, ?)",
+                             VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                             bparams,
                         )
                         .await
                         .map_err(db_error)?;
                     }
 
-                    Ok(id)
+                    Ok(quote_id)
                 })
             })
             .await?;
