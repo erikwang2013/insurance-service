@@ -31,6 +31,12 @@ pub struct User {
     pub role: String,
     /// 状态："ACTIVE" | "DISABLED" | "FROZEN"
     pub status: String,
+    /// 微信小程序 openid（唯一索引；绑定后微信登录直登）
+    pub openid: Option<String>,
+    /// 微信 unionid（同主体多应用通用标识，可空）
+    pub unionid: Option<String>,
+    /// 令牌版本：logout / 改密 / 换绑手机时 +1，使此前签发的 refresh 失效
+    pub token_version: i64,
     pub last_login_at: Option<DateTime<Utc>>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,

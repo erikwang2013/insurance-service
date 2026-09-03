@@ -27,7 +27,11 @@ CREATE TABLE users (
   updated_at    DATETIME(3)   NOT NULL DEFAULT CURRENT_TIMESTAMP(3)
                            ON UPDATE CURRENT_TIMESTAMP(3),
   deleted_at    DATETIME(3)   NULL,
+  openid        VARCHAR(64)   NULL,          -- 微信 openid（v1.6.0 绑定闭环）
+  unionid       VARCHAR(64)   NULL,          -- 微信 unionid
+  token_version INT           NOT NULL DEFAULT 0,  -- 令牌版本：logout/改密/换绑 +1 吊销旧 refresh
   UNIQUE KEY uk_username (username),
+  UNIQUE KEY uk_openid (openid),
   KEY idx_phone_masked (phone_masked)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -447,4 +451,34 @@ CREATE TABLE audit_logs (
   KEY idx_audit_user (user_id),
   KEY idx_audit_action (action),
   KEY idx_audit_created (created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ============================================================
+-- 15. claim_documents 理赔资料（v1.6.0 C3）
+-- ============================================================
+CREATE TABLE claim_documents (
+  id         BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  claim_id   BIGINT UNSIGNED NOT NULL,
+  doc_type   VARCHAR(32)  NOT NULL,
+  file_name  VARCHAR(255) NOT NULL,
+  file_key   VARCHAR(255) NOT NULL,
+  created_at DATETIME(3)  NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  KEY idx_claim_doc_claim (claim_id),
+  CONSTRAINT fk_claim_doc_claim FOREIGN KEY (claim_id) REFERENCES claims (id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ============================================================
+-- 16. quote_rates 报价费率表（v1.6.0 C4，整期保费系数 premium=保额×rate）
+-- ============================================================
+CREATE TABLE quote_rates (
+  id          BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  product_id  BIGINT UNSIGNED NOT NULL,
+  term_months INT           NOT NULL,              -- 保障期（月）匹配维度
+  amount_min  DECIMAL(14,2) NOT NULL DEFAULT 0,    -- 保额下限（含）
+  amount_max  DECIMAL(14,2) NULL,                  -- 保额上限（含），NULL=不限
+  rate        DECIMAL(10,6) NOT NULL,              -- 整期保费系数
+  created_at  DATETIME(3)   NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  KEY idx_qrate_product (product_id, term_months),
+  CONSTRAINT fk_qrate_product FOREIGN KEY (product_id)
+    REFERENCES insurance_products (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

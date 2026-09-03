@@ -62,6 +62,12 @@ pub fn route_table() -> Vec<Route> {
         },
         Route {
             method: Post,
+            path: "/api/v1/auth/wechat/bind",
+            handler: "auth.bind_wechat",
+            auth: Authenticated,
+        },
+        Route {
+            method: Post,
             path: "/api/v1/auth/refresh",
             handler: "auth.refresh",
             auth: Public,
@@ -167,6 +173,12 @@ pub fn route_table() -> Vec<Route> {
             handler: "policy.detail",
             auth: Authenticated,
         },
+        Route {
+            method: Post,
+            path: "/api/v1/policies/{id}/beneficiaries",
+            handler: "policy.endorse_beneficiaries",
+            auth: Authenticated,
+        },
         // contracts
         Route {
             method: Get,
@@ -218,6 +230,18 @@ pub fn route_table() -> Vec<Route> {
             handler: "claim.review",
             auth: Authenticated,
         },
+        Route {
+            method: Post,
+            path: "/api/v1/claims/{id}/documents",
+            handler: "claim.upload_document",
+            auth: Authenticated,
+        },
+        Route {
+            method: Get,
+            path: "/api/v1/claims/{id}/documents",
+            handler: "claim.documents",
+            auth: Authenticated,
+        },
         // user
         Route {
             method: Get,
@@ -254,6 +278,12 @@ pub fn route_table() -> Vec<Route> {
             method: Post,
             path: "/api/v1/admin/stats",
             handler: "admin.stats",
+            auth: AdminOrOperator,
+        },
+        Route {
+            method: Get,
+            path: "/api/v1/admin/audit-logs",
+            handler: "admin.audit_logs",
             auth: AdminOrOperator,
         },
     ]
@@ -321,6 +351,7 @@ pub fn build_bee_router(state: AppState) -> axum::Router {
                 .post("/auth/register", auth_handler)
                 .post("/auth/login", auth_handler)
                 .post("/auth/wechat/login", auth_handler)
+                .post("/auth/wechat/bind", auth_handler)
                 .post("/auth/refresh", auth_handler)
                 .post("/auth/logout", auth_handler)
                 .get("/user/me", auth_handler)
@@ -348,6 +379,7 @@ pub fn build_bee_router(state: AppState) -> axum::Router {
                 // policies
                 .get("/policies", policy_handler)
                 .get("/policies/{id}", policy_handler)
+                .post("/policies/{id}/beneficiaries", policy_handler)
                 // contracts
                 .get("/contracts/{id}", contract_handler)
                 .post("/contracts/{id}/sign", contract_handler)
@@ -357,11 +389,15 @@ pub fn build_bee_router(state: AppState) -> axum::Router {
                 .post("/claims", claim_handler)
                 .get("/claims", claim_handler)
                 .post("/claims/{id}/review", claim_handler)
+                .post("/claims/{id}/documents", claim_handler)
+                .get("/claims/{id}/documents", claim_handler)
                 // admin（运营后台：商品建档 / 上下架）
                 .post("/admin/products", admin_handler)
                 .post("/admin/products/{id}/status", admin_handler)
                 // admin/stats（运营统计，OPERATOR/ADMIN）
                 .post("/admin/stats", stats_handler)
+                // admin/audit-logs（审计查询，OPERATOR/ADMIN）
+                .get("/admin/audit-logs", admin_handler)
         })
         .build();
     // 限流挂载：仅覆盖业务路由（/healthz、/favicon.svg 不受限）

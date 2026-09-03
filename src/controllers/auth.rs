@@ -85,9 +85,39 @@ impl AuthController {
     }
 
     async fn logout(&self, ctx: &mut Context) -> Result<(), RouterError> {
-        // 阶段 0：无服务端会话态，直接成功（后续随 session/令牌注销闭环实现）
-        self.reply(ctx, ok_response(serde_json::json!({ "logout": true })))
-            .await
+        // user_id 经 query 显式传入（同 me()/change_password()/bind_phone() 约定）
+        let q = query_map(ctx.request.uri().query());
+        let user_id: i64 = match q.get("user_id").and_then(|s| s.parse().ok()) {
+            Some(id) => id,
+            None => return self.reply(ctx, json_envelope(40000, "缺少 user_id")).await,
+        };
+        match self.service.logout(user_id).await {
+            // token_version +1：此前签发的 refresh 全部失效（无状态 JWT 撤销闭环）
+            Ok(_) => self
+                .reply(ctx, ok_response(serde_json::json!({ "logout": true })))
+                .await,
+            Err(e) => self.reply(ctx, error_response(&e)).await,
+        }
+    }
+
+    /// 微信绑定（POST /auth/wechat/bind，user_id 经 query 显式传入，同 user/* 约定）
+    async fn bind_wechat(&self, ctx: &mut Context) -> Result<(), RouterError> {
+        let q = query_map(ctx.request.uri().query());
+        let user_id: i64 = match q.get("user_id").and_then(|s| s.parse().ok()) {
+            Some(id) => id,
+            None => return self.reply(ctx, json_envelope(40000, "缺少 user_id")).await,
+        };
+        // 请求体与微信登录一致：{ "code": "<wx.login 返回的 code>" }
+        let req: WechatLoginReq = match read_json(ctx).await {
+            Ok(r) => r,
+            Err(resp) => return self.reply(ctx, resp).await,
+        };
+        match self.service.bind_wechat(user_id, &req.code).await {
+            Ok(_) => self
+                .reply(ctx, ok_response(serde_json::json!({ "bound": true })))
+                .await,
+            Err(e) => self.reply(ctx, error_response(&e)).await,
+        }
     }
 
     /// 修改密码（POST /user/password，user_id 经 query 显式传入，同 me()）
@@ -173,6 +203,8 @@ impl Controller for AuthController {
             self.register(ctx).await
         } else if path.ends_with("/wechat/login") {
             self.wechat_login(ctx).await
+        } else if path.ends_with("/wechat/bind") {
+            self.bind_wechat(ctx).await
         } else if path.ends_with("/login") {
             self.login(ctx).await
         } else if path.ends_with("/refresh") {

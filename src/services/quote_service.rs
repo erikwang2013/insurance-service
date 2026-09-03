@@ -1,7 +1,11 @@
-//! 报价服务（任务 #4）
+//! 报价服务（任务 #4 / C4）
 //!
-//! 事务内原子创建报价：校验产品存在 → INSERT quotes → INSERT 受益人 → 回读 quote。
+//! 事务内原子创建报价：校验产品存在 → 费率表试算 → INSERT quotes → INSERT 受益人 → 回读 quote。
 //! 报价号格式：`QT{UTC毫秒}{4位hex}`；默认 PENDING，7 天有效期。
+//!
+//! C4 费率表化：产品在 `quote_rates` 配置费率行时（按产品+保障期+保额区间命中），
+//! 保费改为服务端按 `保费=保额×rate` 计算并覆盖请求值（费率行优先）；
+//! 未命中或费率表尚未建（ERRNO 1146，代码先于建表上线）时，沿用请求方 premium（保底回退，兼容既有行为）。
 
 use chrono::NaiveDate;
 use chrono::{DateTime, Utc};
@@ -113,6 +117,35 @@ impl QuoteService {
                         return Err(AppError::business("产品不存在"));
                     }
 
+                    // 1.5) 费率表试算：命中（产品+保障期+保额区间）→ 保费=保额×rate（费率行优先）；
+                    //      未命中 / 费率表未建(1146) → 沿用请求 premium（回退，兼容旧库与既有调用）。
+                    let mut premium = req.premium;
+                    match tx
+                        .exec_first(
+                            "SELECT rate FROM quote_rates \
+                             WHERE product_id = ? AND term_months = ? \
+                               AND amount_min <= ? \
+                               AND (amount_max IS NULL OR amount_max >= ?) \
+                             ORDER BY amount_min ASC, id ASC LIMIT 1",
+                            vec![
+                                Value::from(req.product_id),
+                                Value::from(req.term_months),
+                                Value::from(req.insurance_amount.to_string()),
+                                Value::from(req.insurance_amount.to_string()),
+                            ],
+                        )
+                        .await
+                    {
+                        Ok(Some(row)) => {
+                            if let Some(rate) = dec_opt_row(&row, "rate") {
+                                premium = (req.insurance_amount * rate).round_dp(2);
+                            }
+                        }
+                        Ok(None) => {}
+                        Err(e) if rate_table_missing(&e) => {} // 费率表未部署：按无费率行回退
+                        Err(e) => return Err(db_error(e)),
+                    }
+
                     // 2) INSERT quote
                     let params: Vec<Value> = vec![
                         Value::from(&quote_no),
@@ -122,7 +155,7 @@ impl QuoteService {
                         value_opt_vec(req.holder_id_card_enc.clone()),
                         Value::from(req.insurance_amount.to_string()),
                         Value::from(req.term_months),
-                        Value::from(req.premium.to_string()),
+                        Value::from(premium.to_string()),
                         value_opt_str(premium_detail_str),
                         value_opt_str(effective_date_str),
                         value_opt_str(expire_date_str),
@@ -206,6 +239,13 @@ impl QuoteService {
             .map_err(db_error)?;
         row.map(|r| row_to_quote(&r)).transpose()?.ok_or(AppError::NotFound)
     }
+}
+
+/// 判断是否"费率表不存在"（MySQL ERRNO 1146）：表未建时按无费率行回退，
+/// 允许代码先于 install.sql 上线（平滑部署，费率特性随后台建表自动开启）。
+fn rate_table_missing(e: &mysql_async::Error) -> bool {
+    let msg = e.to_string();
+    msg.contains("quote_rates") && msg.contains("doesn't exist")
 }
 
 // ---------- helpers: Value slice → mysql_async Row / Quote ----------

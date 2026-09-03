@@ -38,6 +38,20 @@ pub struct Claim {
     pub deleted_at: Option<DateTime<Utc>>,
 }
 
+/// 理赔资料（claim_documents，db-schema.md 扩展）
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ClaimDocument {
+    pub id: i64,
+    pub claim_id: i64,
+    /// 资料类型：申报单/病历/发票/其他（自由文本）
+    pub doc_type: String,
+    /// 客户端原始文件名
+    pub file_name: String,
+    /// 对象键或占位 URL（本阶段仅存元数据，不接真实上传）
+    pub file_key: String,
+    pub created_at: DateTime<Utc>,
+}
+
 impl Claim {
     pub const STATUS_SUBMITTED: &'static str = "SUBMITTED";
     pub const STATUS_UNDER_REVIEW: &'static str = "UNDER_REVIEW";

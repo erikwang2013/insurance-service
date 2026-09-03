@@ -13,7 +13,7 @@ use bee_rust::bee_router::{Context, Controller};
 use crate::db::Db;
 use crate::services::stats_service::{StatsReq, StatsService};
 
-use super::{error_response, json_envelope, ok_response, read_json};
+use super::{error_response, ok_response, read_json};
 
 /// 运营统计控制器（持有 StatsService，按请求路径分派动作）
 pub struct StatsController {

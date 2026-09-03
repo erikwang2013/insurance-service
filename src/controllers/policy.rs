@@ -7,9 +7,10 @@ use axum::response::Response;
 use bee_rust::bee_router::context::RouterError;
 use bee_rust::bee_router::{Context, Controller};
 
+use crate::models::policy::EndorseBeneficiariesReq;
 use crate::services::policy_service::PolicyService;
 
-use super::{error_response, json_envelope, ok_response, query_map};
+use super::{error_response, json_envelope, ok_response, query_map, read_json};
 
 /// 保单控制器（持有 PolicyService，按请求路径与方法分派动作）
 pub struct PolicyController {
@@ -57,6 +58,25 @@ impl PolicyController {
         }
     }
 
+    /// 批改-受益人变更（POST /policies/{id}/beneficiaries，操作者 user_id 显式入 body）
+    async fn endorse(&self, ctx: &mut Context) -> Result<(), RouterError> {
+        let id = match ctx.param("id").and_then(|s| s.parse::<i64>().ok()) {
+            Some(id) => id,
+            None => return self.reply(ctx, json_envelope(40000, "保单 id 参数无效")).await,
+        };
+        let req: EndorseBeneficiariesReq = match read_json(ctx).await {
+            Ok(r) => r,
+            Err(resp) => return self.reply(ctx, resp).await,
+        };
+        match self.service.endorse_beneficiaries(req.user_id, id, req).await {
+            Ok((policy, bens)) => {
+                let data = serde_json::json!({ "policy": policy, "beneficiaries": bens });
+                self.reply(ctx, ok_response(data)).await
+            }
+            Err(e) => self.reply(ctx, error_response(&e)).await,
+        }
+    }
+
     async fn reply(&self, ctx: &mut Context, resp: Response) -> Result<(), RouterError> {
         let bytes = axum::body::to_bytes(resp.into_body(), 2 * 1024 * 1024)
             .await
@@ -73,11 +93,12 @@ impl Controller for PolicyController {
     async fn handle(&self, ctx: &mut Context) -> Result<(), RouterError> {
         let path = ctx.request.uri().path().to_string();
         let method = ctx.request.method().clone();
-        if method != axum::http::Method::GET {
+        if method == axum::http::Method::POST && path.ends_with("/beneficiaries") {
+            self.endorse(ctx).await
+        } else if method != axum::http::Method::GET {
             ctx.abort(StatusCode::NOT_FOUND, "接口不存在");
-            return Ok(());
-        }
-        if path.ends_with("/policies") {
+            Ok(())
+        } else if path.ends_with("/policies") {
             self.my_policies(ctx).await
         } else if path.contains("/policies/") && ctx.param("id").is_some() {
             self.detail(ctx).await

@@ -16,12 +16,13 @@ use uuid::Uuid;
 use crate::db::db_error;
 use crate::db::Db;
 use crate::error::{AppError, Result};
-use crate::models::policy::Policy;
+use crate::models::policy::{validate_beneficiaries, Beneficiary, EndorseBeneficiariesReq, Policy};
 
 /// 签发类型常量（policies.issue_type）：续保单
 const ISSUE_TYPE_RENEW: &str = "RENEW";
-/// 审计动作常量（audit_logs.action）：退保
+/// 审计动作常量（audit_logs.action）：退保 / 批改-受益人变更
 const POLICY_ACTION_LAPSE: &str = "POLICY_LAPSE";
+const POLICY_ACTION_ENDORSE: &str = "POLICY_ENDORSE";
 
 #[derive(Debug, Deserialize)]
 pub struct IssuePolicyReq {
@@ -358,6 +359,57 @@ impl PolicyService {
             .transpose()?
             .ok_or_else(|| AppError::business("退保后回读失败"))
     }
+
+    /// 批改-受益人变更：整单替换受益人（先删后插，快照入 audit_logs）；保单须 ACTIVE 且归属请求用户
+    pub async fn endorse_beneficiaries(&self, user_id: i64, policy_id: i64,
+        req: EndorseBeneficiariesReq) -> Result<(Policy, Vec<Beneficiary>)> {
+        validate_beneficiaries(&req.beneficiaries)?;
+        let sel_p = "SELECT * FROM policies WHERE id = ? AND deleted_at IS NULL LIMIT 1";
+        let sel_b = "SELECT id, name, relationship, beneficiary_type, share_percent, sort_order \
+                     FROM policy_beneficiaries WHERE policy_id = ? ORDER BY sort_order, id";
+        let (policy, new_rows) = self.db.with_tx(|tx| {
+            Box::pin(async move {
+                let old = match tx.exec_first(sel_p, vec![policy_id]).await.map_err(db_error)? {
+                    Some(r) => row_to_policy(&r)?,
+                    None => return Err(AppError::business("保单不存在")),
+                };
+                if old.user_id != user_id {
+                    return Err(AppError::Forbidden);
+                }
+                if old.status != Policy::STATUS_ACTIVE {
+                    return Err(AppError::state_conflict("当前保单状态不可批改(仅 ACTIVE 在保可变更受益人)"));
+                }
+                // 快照与返回同源(同列回读)；id_card_enc 保全密文不随批改进出
+                let old_rows: Vec<Row> = tx.exec(sel_b, vec![policy_id]).await.map_err(db_error)?;
+                let before = json_val(Some(bens_json(&old_rows)));
+                tx.exec_drop("DELETE FROM policy_beneficiaries WHERE policy_id = ?", vec![policy_id])
+                    .await.map_err(db_error)?;
+                for (i, b) in req.beneficiaries.iter().enumerate() {
+                    tx.exec_drop(
+                        "INSERT INTO policy_beneficiaries (policy_id, name, relationship, \
+                         beneficiary_type, share_percent, sort_order) VALUES (?, ?, ?, ?, ?, ?)",
+                        vec![
+                            Value::from(policy_id), Value::from(b.name.trim()),
+                            b.relationship.clone().map(Value::from).unwrap_or(Value::NULL), Value::from(b.beneficiary_type()),
+                            b.share_percent.map(|d| Value::from(d.to_string())).unwrap_or(Value::NULL), Value::from(i as i32),
+                        ],
+                    ).await.map_err(db_error)?;
+                }
+                let new_rows: Vec<Row> = tx.exec(sel_b, vec![policy_id]).await.map_err(db_error)?;
+                tx.exec_drop(
+                    "INSERT INTO audit_logs (user_id, action, entity_type, entity_id, \
+                     before_json, after_json) VALUES (?, ?, ?, ?, ?, ?)",
+                    vec![
+                        Value::from(user_id), Value::from(POLICY_ACTION_ENDORSE),
+                        Value::from("POLICY"), Value::from(policy_id),
+                        before, json_val(Some(bens_json(&new_rows))),
+                    ],
+                ).await.map_err(db_error)?;
+                Ok((old, new_rows))
+            })
+        }).await?;
+        Ok((policy, new_rows.iter().map(row_to_beneficiary).collect::<Result<Vec<_>>>()?))
+    }
 }
 
 // ---------- helpers ----------
@@ -394,6 +446,23 @@ fn add_months(d: NaiveDate, months: i32) -> NaiveDate {
         [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][m0 as usize]
     };
     NaiveDate::from_ymd_opt(y, m0 + 1, d.day().min(last)).expect("月份日期恒合法")
+}
+
+fn bens_json(rows: &[Row]) -> serde_json::Value {
+    let list = rows.iter().map(row_to_beneficiary).collect::<Result<Vec<_>>>();
+    serde_json::to_value(list.unwrap_or_default()).unwrap_or_else(|_| serde_json::Value::Null)
+}
+
+fn row_to_beneficiary(row: &Row) -> Result<Beneficiary> {
+    Ok(Beneficiary {
+        id: row.get("id").unwrap_or_default(),
+        policy_id: row.get("policy_id").unwrap_or_default(),
+        name: row.get("name").unwrap_or_default(),
+        relationship: row.get("relationship").flatten(),
+        beneficiary_type: row.get("beneficiary_type").unwrap_or_default(),
+        share_percent: dec_opt_row(row, "share_percent"),
+        sort_order: row.get("sort_order").unwrap_or_default(),
+    })
 }
 
 fn row_to_policy(row: &Row) -> Result<Policy> {

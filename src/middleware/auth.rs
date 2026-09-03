@@ -56,6 +56,11 @@ pub struct Claims {
     pub exp: i64,
     /// 签发者
     pub iss: String,
+    /// 令牌版本（对齐 users.token_version）：签发时记录、refresh 校验比对，
+    /// logout/改密/换绑手机后旧令牌因版本落后失效。老令牌无此载荷，
+    /// serde 缺省为 0，与库中默认 0 一致，兼容既有会话。
+    #[serde(default)]
+    pub token_version: i64,
 }
 
 /// 认证通过后注入上下文的当前用户
@@ -76,12 +81,23 @@ impl JwtService {
         Self { cfg }
     }
 
-    /// 签发 access token
+    /// 签发 access token（token_version 固定 0；兼容入口，供测试/骨架路径使用）
     pub fn issue_access_token(
         &self,
         user_id: i64,
         role: Role,
         platform: Option<String>,
+    ) -> Result<String, crate::error::AppError> {
+        self.issue_token_with_version(user_id, role, platform, 0)
+    }
+
+    /// 签发带令牌版本的 JWT（version 由调用方取自 users.token_version）
+    pub fn issue_token_with_version(
+        &self,
+        user_id: i64,
+        role: Role,
+        platform: Option<String>,
+        token_version: i64,
     ) -> Result<String, crate::error::AppError> {
         let now = chrono::Utc::now().timestamp();
         let claims = Claims {
@@ -91,6 +107,7 @@ impl JwtService {
             iat: now,
             exp: now + self.cfg.access_expiry,
             iss: self.cfg.issuer.clone(),
+            token_version,
         };
         let header = jsonwebtoken::Header::new(jsonwebtoken::Algorithm::HS256);
         jsonwebtoken::encode(

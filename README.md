@@ -10,7 +10,7 @@
 |------|-----|
 | 语言 / 版本 | Rust 2024 edition（rust-version ≥ 1.87） |
 | 许可证 | Apache-2.0 |
-| 版本 | 1.5.0 |
+| 版本 | 1.6.0 |
 | HTTP 框架 | axum 0.8 + bee_rust（bee_router / bee_orm / 过滤器管线） |
 | 存储 | MySQL 8.4（业务库）· Redis / 内存缓存（会话）· OpenSearch（搜索，可选） |
 
@@ -42,13 +42,15 @@
 
 ![项目功能](docs/features.svg)
 
-- **用户与认证**：注册（用户名唯一 + argon2 口令哈希）、登录（账号密码；微信登录 code2session 客户端已配置化，凭据未配置时降级报错）、
-  JWT 双令牌（access 短时效 + refresh 长时效）与 RBAC 角色（USER / AGENT / OPERATOR / ADMIN）。
+- **用户与认证**：注册（用户名唯一 + argon2 口令哈希）、登录（账号密码；微信 openid 绑定登录闭环——code2session 校验 + 绑定 + 按 openid 直登，凭据未配置时降级报错）、
+  JWT 双令牌（access 短时效 + refresh 长时效，token_version 版本化——logout / 改密 / 换绑即吊销旧令牌）与 RBAC 角色（USER / AGENT / OPERATOR / ADMIN）。
 - **保险商品**：列表分页 / 状态过滤 / 精选位、详情、关联条款阅读，运营后台建档与上架 / 下架 / 停售（OPERATOR / ADMIN）。
+- **报价**：费率表驱动（`quote_rates` 按产品 / 保障期 / 保额区间定价，命中优先，未命中回退请求保费）。
 - **全文搜索**：当前 MySQL LIKE（带分页保护），规划 OpenSearch 索引 + 同步 Worker，未就绪自动降级。
 - **交易闭环**：报价 → 订单 → 支付（预下单 / 支付 / 回调）API 已挂载；微信渠道当前为 Mock，真实渠道规划中。
-- **保单与契约**：保单列表 / 详情、电子合同 Mock 签署与签署回调 API 已挂载；易签等外部电子签渠道规划中。
-- **理赔**：报案（`CLM` 单号，校验保单归属）、我的理赔列表、审核（APPROVE / REJECT，需 OPERATOR / ADMIN）已实现。
+- **保单与契约**：保单列表 / 详情、受益人批改（`POLICY_ENDORSE` 审计留痕）、电子合同 Mock 签署与签署回调 API 已挂载；易签等外部电子签渠道规划中。
+- **理赔**：报案（`CLM` 单号，校验保单归属）、我的理赔列表、审核（APPROVE / REJECT，需 OPERATOR / ADMIN）、资料上传 / 列表（`claim_documents` 元数据）已实现。
+- **运营 / 审计**：运营后台 API、`audit_logs` 全量留痕 + 审计查询接口（`/api/v1/admin/audit-logs`，OPERATOR / ADMIN）。
 - **运营 / 审计（规划）**：运营后台 API、`audit_log` 全量留痕。
 - **横切能力**：入站安全扫描、参数化查询、AES-256-GCM 敏感字段加密、令牌精确过期（leeway=0）、
   全链路 `trace_id`、统一响应信封（`{code, message, data}`，业务错误 `40000`）。
@@ -79,7 +81,7 @@ insurance-service/
 │   ├── main.rs                # 启动入口：init → 配置 → AppState → 路由 → serve
 │   ├── lib.rs                 # 库入口（集成测试依赖）
 │   ├── config.rs              # AppConfig：从环境变量 + config/app.toml 加载
-│   ├── routes.rs              # 数据驱动路由表（35 个业务端点）+ 已挂载 handler
+│   ├── routes.rs              # 数据驱动路由表（39 个业务端点）+ 已挂载 handler
 │   ├── db.rs                  # mysql_async 连接池与查询 / 事务封装
 │   ├── error.rs               # AppError（BadRequest / Unauthorized / NotFound / Business…）
 │   ├── controllers/mod.rs     # AppState · bee 管线 run() · 统一信封
@@ -162,9 +164,10 @@ cargo test           # 全部测试（单元 + 集成）
 ```
 
 - 依赖 MySQL 的集成测试在未配置 `DATABASE_URL` 或未执行 `install.sql` 时会打印 `SKIP` 并跳过，
-  保证无库环境 `cargo test` 不失败（v1.5.0 全量 107 项全绿：单元 13 + 集成 94）。集成测试覆盖：
-  认证（含微信未配置降级）、API 鉴权 E2E、交易闭环（报价→订单→支付回调→保单签发）、
-  保单生命周期（续保/退保）、限流、用户中心（改密/换绑）、运营统计、理赔、商品、修复回归等。
+  保证无库环境 `cargo test` 不失败（v1.6.0 全量 128 项全绿：单元 13 + 集成 115）。集成测试覆盖：
+  认证（微信绑定/未配置降级/令牌吊销）、API 鉴权 E2E、交易闭环（报价→订单→支付回调→保单签发）、
+  保单生命周期（续保/退保/受益人批改）、限流、用户中心（改密/换绑）、运营统计、费率报价、
+  理赔（资料上传）、审计查询、商品、修复回归等。
 - 按项目约定（CLAUDE.md）：代码变更后**先跑测试、再提交**。
 
 ### 已实现 API 概览（阶段 0 → 1）
@@ -174,7 +177,8 @@ cargo test           # 全部测试（单元 + 集成）
 | GET | `/healthz` | 健康检查 |
 | POST | `/api/v1/auth/register` | 注册（返回双令牌） |
 | POST | `/api/v1/auth/login` | 账号密码登录 |
-| POST | `/api/v1/auth/wechat/login` | 微信登录（code2session 客户端已配置化，未配置凭据时降级报错；openid 绑定期待阶段 3） |
+| POST | `/api/v1/auth/wechat/login` | 微信登录（code2session 校验，按 openid 直登；未绑定提示；未配置凭据降级报错） |
+| POST | `/api/v1/auth/wechat/bind` | 微信绑定（登录态 + code → 写入 openid，冲突 409） |
 | POST | `/api/v1/auth/refresh` · `/api/v1/auth/logout` | 令牌刷新 / 注销 |
 | GET | `/api/v1/user/me` | 当前用户资料（Bearer Token） |
 | GET | `/api/v1/products` · `/api/v1/products/{id}` | 商品列表 / 详情 |
@@ -189,15 +193,18 @@ cargo test           # 全部测试（单元 + 集成）
 | POST | `/api/v1/payments/wechat/prepay` | 微信预支付（Mock 渠道） |
 | POST | `/api/v1/payments/callback/{provider}` | 支付回调 |
 | GET | `/api/v1/policies` · `/api/v1/policies/{id}` | 我的保单 / 保单详情 |
+| POST | `/api/v1/policies/{id}/beneficiaries` | 保单批改：受益人整单替换（POLICY_ENDORSE 审计） |
 | GET | `/api/v1/contracts/{id}` | 电子合同详情 |
 | POST | `/api/v1/contracts/{id}/sign` · GET `/sign-url` | 合同签署 / 签署 URL |
 | POST | `/api/v1/contracts/callback/{provider}` | 签署回调 |
 | POST | `/api/v1/claims` | 理赔报案（校验保单归属） |
 | GET | `/api/v1/claims?user_id=&page=&size=` | 我的理赔（分页） |
 | POST | `/api/v1/claims/{id}/review` | 理赔审核 APPROVE / REJECT（OPERATOR / ADMIN） |
+| POST · GET | `/api/v1/claims/{id}/documents` | 理赔资料上传 / 列表（归属校验） |
 | POST | `/api/v1/admin/products` · `/api/v1/admin/products/{id}/status` | 商品建档 / 上下架（OPERATOR / ADMIN） |
+| GET | `/api/v1/admin/audit-logs` | 审计日志查询（OPERATOR / ADMIN，多条件过滤 + 分页） |
 
-完整路由表（共 35 个业务端点，含 `/user/me`、`/user/password`、`/user/phone`、运营后台 `/admin/*`）
+完整路由表（共 39 个业务端点，含 `/user/me`、`/user/password`、`/user/phone`、运营后台 `/admin/*`）
 见 `src/routes.rs` `route_table()`；库表设计见 `docs/db-schema.md` 与 `install.sql`。
 
 ---

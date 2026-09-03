@@ -302,11 +302,31 @@ async fn api_auth_logout_success() {
             return;
         }
     };
+    // v1.6.0 起 logout 为真实吊销：需真实用户（query user_id），token_version+1
+    let username = common::unique("api_logout");
+    let register_body = body(vec![
+        ("username".to_string(), bv_username(&username)),
+        ("password".to_string(), Value::String("P@ssw0rd!".to_string())),
+        ("phone".to_string(), Value::String("13800138000".to_string())),
+    ]);
+    let (_, bytes) = send(&app, json_post("/api/v1/auth/register", &register_body)).await;
+    let envelope = parse_envelope(&bytes);
+    let user_id = envelope
+        .data
+        .and_then(|d| d.get("user_id").and_then(|v| v.as_i64()))
+        .expect("注册返回 user_id");
     let body = body(vec![]);
-    let (status, bytes) = send(&app, json_post("/api/v1/auth/logout", &body)).await;
+    let (status, bytes) = send(
+        &app,
+        json_post(&format!("/api/v1/auth/logout?user_id={user_id}"), &body),
+    )
+    .await;
     assert_eq!(status, StatusCode::OK);
     let envelope = parse_envelope(&bytes);
-    assert_eq!(envelope.code, 0);
+    assert_eq!(envelope.code, 0, "logout 应成功，resp={:?}", envelope);
+    if let Ok(db_url) = std::env::var("DATABASE_URL") {
+        let _ = common::delete_user_by_conn(&db_url, &username).await;
+    }
 }
 
 #[tokio::test]

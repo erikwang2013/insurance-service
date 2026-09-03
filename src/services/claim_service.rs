@@ -13,7 +13,7 @@ use uuid::Uuid;
 use crate::db::db_error;
 use crate::db::Db;
 use crate::error::{AppError, Result};
-use crate::models::claim::Claim;
+use crate::models::claim::{Claim, ClaimDocument};
 use crate::models::user::User;
 
 /// 报案请求体
@@ -42,6 +42,19 @@ pub struct ReviewClaimReq {
     pub approved_amount: Option<Decimal>,
     /// 审核备注（可空，REJECT 缺省存 NULL）
     pub remark: Option<String>,
+}
+
+/// 理赔资料上传请求体（操作者 user_id 与报案风格一致，显式传入）
+#[derive(Debug, Deserialize)]
+pub struct UploadDocumentReq {
+    /// 操作者 id（须为理赔报案人或 ADMIN）
+    pub user_id: i64,
+    /// 资料类型（如 申报单/病历/发票/其他）
+    pub doc_type: String,
+    /// 客户端原始文件名
+    pub file_name: String,
+    /// 对象键或占位 URL（仅存元数据，不接真实上传）
+    pub file_key: String,
 }
 
 /// 理赔服务
@@ -235,6 +248,104 @@ impl ClaimService {
             .map_err(db_error)?;
         rows.iter().map(row_to_claim).collect::<Result<Vec<_>>>()
     }
+
+    /// 校验理赔存在且操作者为其报案人或 ADMIN（他人 USER 一律拒绝）。
+    /// 供资料上传/列表共用。
+    async fn check_claim_access(
+        &self,
+        claim_id: i64,
+        actor_id: i64,
+    ) -> Result<()> {
+        let mut conn = self.db.conn().await?;
+        let owner: Option<i64> = conn
+            .exec_first(
+                "SELECT user_id FROM claims WHERE id = ? AND deleted_at IS NULL LIMIT 1",
+                vec![claim_id],
+            )
+            .await
+            .map_err(db_error)?;
+        let owner = owner.ok_or_else(|| AppError::business("理赔单不存在"))?;
+        if owner == actor_id {
+            return Ok(());
+        }
+        // 非报案人：仅 ADMIN 放行（对齐任务要求）
+        let role: Option<String> = conn
+            .exec_first(
+                "SELECT role FROM users WHERE id = ? AND deleted_at IS NULL LIMIT 1",
+                vec![actor_id],
+            )
+            .await
+            .map_err(db_error)?;
+        if matches!(role.as_deref(), Some(User::ROLE_ADMIN)) {
+            Ok(())
+        } else {
+            Err(AppError::Forbidden)
+        }
+    }
+
+    /// 上传理赔资料：校验归属 → INSERT 元数据 → 回读整行。
+    pub async fn add_document(&self, claim_id: i64, req: UploadDocumentReq) -> Result<ClaimDocument> {
+        // DB 前校验（doc_type≤32、file_name/file_key≤255，与表列宽一致）
+        let doc_type = req.doc_type.trim();
+        let file_name = req.file_name.trim();
+        let file_key = req.file_key.trim();
+        if doc_type.is_empty() {
+            return Err(AppError::business("资料类型必填"));
+        }
+        if file_name.is_empty() {
+            return Err(AppError::business("文件名为空"));
+        }
+        if file_key.is_empty() {
+            return Err(AppError::business("file_key 必填"));
+        }
+        if doc_type.len() > 32 {
+            return Err(AppError::business("资料类型最长 32 字符"));
+        }
+        if file_name.len() > 255 || file_key.len() > 255 {
+            return Err(AppError::business("文件名/file_key 最长 255 字符"));
+        }
+        self.check_claim_access(claim_id, req.user_id).await?;
+
+        let mut conn = self.db.conn().await?;
+        conn.exec_drop(
+            "INSERT INTO claim_documents (claim_id, doc_type, file_name, file_key) VALUES (?, ?, ?, ?)",
+            vec![
+                Value::from(claim_id),
+                Value::from(doc_type),
+                Value::from(file_name),
+                Value::from(file_key),
+            ],
+        )
+        .await
+        .map_err(db_error)?;
+        let doc_id = conn.last_insert_id().unwrap_or_default() as i64;
+
+        let row: Option<Row> = conn
+            .exec_first(
+                "SELECT * FROM claim_documents WHERE id = ? LIMIT 1",
+                vec![doc_id],
+            )
+            .await
+            .map_err(db_error)?;
+        let row = row.ok_or_else(|| AppError::business("上传后回读失败"))?;
+        row_to_document(&row)
+    }
+
+    /// 理赔资料列表（全量，理赔单资料量小；归属校验与上传一致）。
+    pub async fn list_documents(&self, claim_id: i64, user_id: i64) -> Result<Vec<ClaimDocument>> {
+        self.check_claim_access(claim_id, user_id).await?;
+        let rows: Vec<Row> = self
+            .db
+            .conn()
+            .await?
+            .exec(
+                "SELECT * FROM claim_documents WHERE claim_id = ? ORDER BY created_at DESC, id DESC",
+                vec![claim_id],
+            )
+            .await
+            .map_err(db_error)?;
+        rows.iter().map(row_to_document).collect::<Result<Vec<_>>>()
+    }
 }
 
 // ---------- helpers ----------
@@ -264,6 +375,18 @@ fn date_opt_row(row: &Row, col: &str) -> Option<NaiveDate> {
 
 fn value_opt_str(v: Option<String>) -> Value {
     v.map(Value::from).unwrap_or(Value::NULL)
+}
+
+/// 从 Row 重建 ClaimDocument
+fn row_to_document(row: &Row) -> Result<ClaimDocument> {
+    Ok(ClaimDocument {
+        id: row.get("id").unwrap_or_default(),
+        claim_id: row.get("claim_id").unwrap_or_default(),
+        doc_type: row.get("doc_type").unwrap_or_default(),
+        file_name: row.get("file_name").unwrap_or_default(),
+        file_key: row.get("file_key").unwrap_or_default(),
+        created_at: dt_row(row, "created_at"),
+    })
 }
 
 /// 从 Row 重建 Claim

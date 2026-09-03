@@ -7,7 +7,9 @@ use axum::response::Response;
 use bee_rust::bee_router::context::RouterError;
 use bee_rust::bee_router::{Context, Controller};
 
-use crate::services::claim_service::{ClaimService, CreateClaimReq, ReviewClaimReq};
+use crate::services::claim_service::{
+    ClaimService, CreateClaimReq, ReviewClaimReq, UploadDocumentReq,
+};
 
 use super::{error_response, json_envelope, ok_response, query_map, read_json};
 
@@ -76,6 +78,46 @@ impl ClaimController {
         }
     }
 
+    /// 上传理赔资料（POST /claims/{id}/documents，操作者 user_id 显式入 body）
+    async fn upload_documents(&self, ctx: &mut Context) -> Result<(), RouterError> {
+        let claim_id = match ctx.param("id").and_then(|s| s.parse::<i64>().ok()) {
+            Some(id) => id,
+            None => return self.reply(ctx, json_envelope(40000, "理赔单 id 参数无效")).await,
+        };
+        let req: UploadDocumentReq = match read_json(ctx).await {
+            Ok(r) => r,
+            Err(resp) => return self.reply(ctx, resp).await,
+        };
+        match self.service.add_document(claim_id, req).await {
+            Ok(doc) => {
+                let data = serde_json::to_value(&doc)
+                    .map_err(|e| RouterError::SerializeError(e.to_string()))?;
+                self.reply(ctx, ok_response(data)).await
+            }
+            Err(e) => self.reply(ctx, error_response(&e)).await,
+        }
+    }
+
+    /// 理赔资料列表（GET /claims/{id}/documents，user_id 经 query 传入，同 my_claims）
+    async fn list_documents(&self, ctx: &mut Context) -> Result<(), RouterError> {
+        let claim_id = match ctx.param("id").and_then(|s| s.parse::<i64>().ok()) {
+            Some(id) => id,
+            None => return self.reply(ctx, json_envelope(40000, "理赔单 id 参数无效")).await,
+        };
+        let q = query_map(ctx.request.uri().query());
+        let user_id: i64 = match q.get("user_id").and_then(|s| s.parse().ok()) {
+            Some(id) => id,
+            None => return self.reply(ctx, json_envelope(40000, "缺少 user_id")).await,
+        };
+        match self.service.list_documents(claim_id, user_id).await {
+            Ok(list) => {
+                let data = serde_json::json!({ "list": list });
+                self.reply(ctx, ok_response(data)).await
+            }
+            Err(e) => self.reply(ctx, error_response(&e)).await,
+        }
+    }
+
     /// 将响应写入 Context（与 auth/product 控制器同模式）
     async fn reply(&self, ctx: &mut Context, resp: Response) -> Result<(), RouterError> {
         let bytes = axum::body::to_bytes(resp.into_body(), 2 * 1024 * 1024)
@@ -95,6 +137,10 @@ impl Controller for ClaimController {
         let method = ctx.request.method().clone();
         if method == axum::http::Method::POST && path.ends_with("/review") {
             self.review(ctx).await
+        } else if path.ends_with("/documents") && method == axum::http::Method::POST {
+            self.upload_documents(ctx).await
+        } else if path.ends_with("/documents") {
+            self.list_documents(ctx).await
         } else if path.ends_with("/claims") && method == axum::http::Method::POST {
             self.create(ctx).await
         } else if path.ends_with("/claims") {
