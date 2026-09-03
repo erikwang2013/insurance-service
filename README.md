@@ -3,8 +3,8 @@
 保险服务平台后端服务（Rust 版）。基于 `bee_rust`（bee 管线 + 路由 + ORM 骨架）、`axum`、`tokio`
 构建，目标覆盖保险业务从「商品展示 → 报价 → 订单 → 支付 → 保单 → 电子签约 → 理赔」的完整闭环。
 
-当前迭代处于 **阶段 0 → 1**：已落地**用户认证、保险商品、全文搜索、理赔报案**业务能力，并打通
-**报价 → 订单 → 支付 → 保单 → 签约**交易闭环 API（支付 / 电子签当前为 Mock 渠道），运营后台仍为规划。
+当前迭代处于 **阶段 0 → 1**：已落地**用户认证、保险商品、全文搜索、报价、理赔（含审核）**业务能力，并打通
+**报价 → 订单 → 支付 → 保单 → 签约**交易闭环 API（支付 / 电子签当前为 Mock 渠道），并已提供**运营后台商品建档与上下架**接口。
 
 | 项目 | 值 |
 |------|-----|
@@ -44,11 +44,11 @@
 
 - **用户与认证**：注册（用户名唯一 + argon2 口令哈希）、登录（账号密码；微信登录规划中）、
   JWT 双令牌（access 短时效 + refresh 长时效）与 RBAC 角色（USER / AGENT / OPERATOR / ADMIN）。
-- **保险商品**：列表分页 / 状态过滤 / 精选位、详情、关联条款阅读，admin 上架下架（规划）。
+- **保险商品**：列表分页 / 状态过滤 / 精选位、详情、关联条款阅读，运营后台建档与上架 / 下架 / 停售（OPERATOR / ADMIN）。
 - **全文搜索**：当前 MySQL LIKE（带分页保护），规划 OpenSearch 索引 + 同步 Worker，未就绪自动降级。
 - **交易闭环**：报价 → 订单 → 支付（预下单 / 支付 / 回调）API 已挂载；微信渠道当前为 Mock，真实渠道规划中。
 - **保单与契约**：保单列表 / 详情、电子合同 Mock 签署与签署回调 API 已挂载；易签等外部电子签渠道规划中。
-- **理赔**：报案（`CLM` 单号，校验保单归属）与我的理赔列表已实现；理赔审核流程规划中。
+- **理赔**：报案（`CLM` 单号，校验保单归属）、我的理赔列表、审核（APPROVE / REJECT，需 OPERATOR / ADMIN）已实现。
 - **运营 / 审计（规划）**：运营后台 API、`audit_log` 全量留痕。
 - **横切能力**：入站安全扫描、参数化查询、AES-256-GCM 敏感字段加密、令牌精确过期（leeway=0）、
   全链路 `trace_id`、统一响应信封（`{code, message, data}`，业务错误 `40000`）。
@@ -79,7 +79,7 @@ insurance-service/
 │   ├── main.rs                # 启动入口：init → 配置 → AppState → 路由 → serve
 │   ├── lib.rs                 # 库入口（集成测试依赖）
 │   ├── config.rs              # AppConfig：从环境变量 + config/app.toml 加载
-│   ├── routes.rs              # 数据驱动路由表（29 个业务端点）+ 已挂载 handler
+│   ├── routes.rs              # 数据驱动路由表（31 个业务端点）+ 已挂载 handler
 │   ├── db.rs                  # mysql_async 连接池与查询 / 事务封装
 │   ├── error.rs               # AppError（BadRequest / Unauthorized / NotFound / Business…）
 │   ├── controllers/mod.rs     # AppState · bee 管线 run() · 统一信封
@@ -156,7 +156,8 @@ cargo test           # 全部测试（单元 + 集成）
 ```
 
 - 依赖 MySQL 的集成测试在未配置 `DATABASE_URL` 或未执行 `install.sql` 时会打印 `SKIP` 并跳过，
-  保证无库环境 `cargo test` 不失败（共 51 项，认证 6 / 商品 5 / 搜索 4 / 安全 18 / API E2E 8 / 理赔 5 / 单元 5）。
+  保证无库环境 `cargo test` 不失败（共 64 项，认证 6 / 商品 5 / 运营商品 5 / 搜索 4 / 安全 18 /
+  API E2E 8 / 理赔 5 / 理赔审核 5 / 报价 3 / 单元 5）。
 - 按项目约定（CLAUDE.md）：代码变更后**先跑测试、再提交**。
 
 ### 已实现 API 概览（阶段 0 → 1）
@@ -173,7 +174,7 @@ cargo test           # 全部测试（单元 + 集成）
 | GET | `/api/v1/products/featured` | 精选商品 |
 | GET | `/api/v1/search?q=&index=&page=&size=` | 全文搜索 |
 | POST | `/api/v1/quotes` | 报价试算 |
-| GET | `/api/v1/quotes/{id}` | 报价详情（占位 40001，待接库） |
+| GET | `/api/v1/quotes/{id}` | 报价详情 |
 | POST | `/api/v1/orders` · GET `/api/v1/orders` | 下单 / 我的订单 |
 | GET | `/api/v1/orders/{id}` | 订单详情 |
 | POST | `/api/v1/payments/{order_id}/prepay` · `/pay` | 预支付 / 支付（Mock） |
@@ -185,6 +186,8 @@ cargo test           # 全部测试（单元 + 集成）
 | POST | `/api/v1/contracts/callback/{provider}` | 签署回调 |
 | POST | `/api/v1/claims` | 理赔报案（校验保单归属） |
 | GET | `/api/v1/claims?user_id=&page=&size=` | 我的理赔（分页） |
+| POST | `/api/v1/claims/{id}/review` | 理赔审核 APPROVE / REJECT（OPERATOR / ADMIN） |
+| POST | `/api/v1/admin/products` · `/api/v1/admin/products/{id}/status` | 商品建档 / 上下架（OPERATOR / ADMIN） |
 
 更完整的路由表（含规划中的 `/user/me`、运营后台 `/admin/*` 等）见 `src/routes.rs` `route_table()`；
 库表设计见 `docs/db-schema.md` 与 `install.sql`。

@@ -212,6 +212,12 @@ pub fn route_table() -> Vec<Route> {
             handler: "claim.my_claims",
             auth: Authenticated,
         },
+        Route {
+            method: Post,
+            path: "/api/v1/claims/{id}/review",
+            handler: "claim.review",
+            auth: Authenticated,
+        },
         // user
         Route {
             method: Get,
@@ -224,6 +230,12 @@ pub fn route_table() -> Vec<Route> {
             method: Post,
             path: "/api/v1/admin/products",
             handler: "admin.product_upsert",
+            auth: AdminOrOperator,
+        },
+        Route {
+            method: Post,
+            path: "/api/v1/admin/products/{id}/status",
+            handler: "admin.product_status",
             auth: AdminOrOperator,
         },
     ]
@@ -272,8 +284,8 @@ pub async fn favicon_svg() -> impl axum::response::IntoResponse {
 use bee_rust::bee_router::Router;
 
 use crate::controllers::{
-    AppState, auth_handler, claim_handler, contract_handler, order_handler, payment_handler,
-    policy_handler, product_handler, quote_handler, search_handler,
+    admin_handler, AppState, auth_handler, claim_handler, contract_handler, order_handler,
+    payment_handler, policy_handler, product_handler, quote_handler, search_handler,
 };
 
 /// 对接 bee_router 的路由注册（bee-rust 已激活，见 Cargo.toml [workspace.dependencies] 注释）
@@ -321,6 +333,10 @@ pub fn build_bee_router(state: AppState) -> axum::Router {
                 // claims（理赔）
                 .post("/claims", claim_handler)
                 .get("/claims", claim_handler)
+                .post("/claims/{id}/review", claim_handler)
+                // admin（运营后台：商品建档 / 上下架）
+                .post("/admin/products", admin_handler)
+                .post("/admin/products/{id}/status", admin_handler)
         })
         .build();
     // 吉祥物 favicon + 健康检查：根路径（浏览器 / 前端直接引用）

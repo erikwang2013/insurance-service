@@ -191,6 +191,21 @@ impl QuoteService {
         let quote = row_to_quote(&row)?;
         Ok(quote)
     }
+
+    /// 报价详情：按 id 查（未删除），无行返回 NotFound。
+    pub async fn by_id(&self, id: i64) -> Result<Quote> {
+        let row: Option<mysql_async::Row> = self
+            .db
+            .conn()
+            .await?
+            .exec_first(
+                "SELECT * FROM quotes WHERE id = ? AND deleted_at IS NULL LIMIT 1",
+                vec![id],
+            )
+            .await
+            .map_err(db_error)?;
+        row.map(|r| row_to_quote(&r)).transpose()?.ok_or(AppError::NotFound)
+    }
 }
 
 // ---------- helpers: Value slice → mysql_async Row / Quote ----------
@@ -222,11 +237,9 @@ fn dec_opt_row(row: &Row, col: &str) -> Option<Decimal> {
         .and_then(|s| s.parse().ok())
 }
 
-/// 读行 → Option<NaiveDate>（DATE 列以字符串到达）
+/// 读行 → Option<NaiveDate>（DATE 列经 mysql_async chrono feature 直接解码为 NaiveDate，非字符串）
 fn date_opt_row(row: &Row, col: &str) -> Option<NaiveDate> {
-    row.get::<Option<String>, &str>(col)
-        .flatten()
-        .and_then(|s| NaiveDate::parse_from_str(&s, "%Y-%m-%d").ok())
+    row.get::<Option<NaiveDate>, &str>(col).flatten()
 }
 
 /// 读行 → Option<serde_json::Value>（JSON 文本）

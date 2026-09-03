@@ -6,6 +6,7 @@
 //! `Context`，交由对应 Controller 的 `handle()` 走完整 bee 管线
 //! （session 恢复 → prepare → handle → finish → session 持久化）。
 
+pub mod admin;
 pub mod auth;
 pub mod claim;
 pub mod contract;
@@ -44,6 +45,7 @@ use crate::services::payment_service::PaymentService;
 use crate::services::policy_service::PolicyService;
 use crate::services::quote_service::QuoteService;
 
+pub use admin::AdminController;
 pub use auth::AuthController;
 pub use claim::ClaimController;
 pub use contract::ContractController;
@@ -63,6 +65,7 @@ pub struct AppState {
     pub cache: Arc<dyn Cache>,
     pub templates: Arc<TemplateEngine>,
     pub ttl: Duration,
+    pub admin: Arc<AdminController>,
     pub auth: Arc<AuthController>,
     pub product: Arc<ProductController>,
     pub search: Arc<SearchController>,
@@ -87,6 +90,7 @@ impl AppState {
         let crypto = CryptoService::from_master_key_b64(&cfg.crypto.master_key)
             .map_err(|e| format!("加密主密钥无效: {e}"))?;
         let db = Db::new(&cfg.database).map_err(|e| format!("数据库连接池初始化失败: {e}"))?;
+        let admin = Arc::new(AdminController::new(db.clone()));
         let auth = Arc::new(AuthController::new(auth_service(
             cfg.jwt.clone(),
             crypto,
@@ -104,6 +108,7 @@ impl AppState {
             cache,
             templates,
             ttl: SESSION_TTL,
+            admin,
             auth,
             product,
             search,
@@ -194,6 +199,14 @@ pub(crate) fn ok_response(data: serde_json::Value) -> Response {
 // ---------------------------------------------------------------------------
 // 适配器 handler（每个资源一个，按 path 在 Controller 内分派）
 // ---------------------------------------------------------------------------
+
+pub async fn admin_handler(
+    State(state): State<AppState>,
+    Path(params): Path<HashMap<String, String>>,
+    request: Request<Body>,
+) -> Response {
+    state.run(state.admin.as_ref(), params, request).await
+}
 
 pub async fn auth_handler(
     State(state): State<AppState>,

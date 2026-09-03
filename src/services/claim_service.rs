@@ -14,6 +14,7 @@ use crate::db::db_error;
 use crate::db::Db;
 use crate::error::{AppError, Result};
 use crate::models::claim::Claim;
+use crate::models::user::User;
 
 /// 报案请求体
 #[derive(Debug, Deserialize)]
@@ -28,6 +29,19 @@ pub struct CreateClaimReq {
     pub accident_desc: Option<String>,
     /// 申请赔付金额
     pub claim_amount: Decimal,
+}
+
+/// 理赔审核请求体
+#[derive(Debug, Deserialize)]
+pub struct ReviewClaimReq {
+    /// 审核人 id（须 OPERATOR / ADMIN）
+    pub reviewer_id: i64,
+    /// 审核动作：APPROVE | REJECT
+    pub action: String,
+    /// 核定赔付金额（APPROVE 必填且 > 0；REJECT 时忽略）
+    pub approved_amount: Option<Decimal>,
+    /// 审核备注（可空，REJECT 缺省存 NULL）
+    pub remark: Option<String>,
 }
 
 /// 理赔服务
@@ -114,6 +128,93 @@ impl ClaimService {
             .map_err(db_error)?;
 
         let row = row.ok_or_else(|| AppError::business("报案后回读失败"))?;
+        row_to_claim(&row)
+    }
+
+    /// 审核：校验审核人角色 → 事务内校验状态并 UPDATE → 回读整行。
+    pub async fn review(&self, claim_id: i64, req: ReviewClaimReq) -> Result<Claim> {
+        // 1) 动作与金额校验（DB 前）
+        let (status, approved_amount_str): (&str, Option<String>) = match req.action.as_str() {
+            "APPROVE" => {
+                let amount = req
+                    .approved_amount
+                    .ok_or_else(|| AppError::business("核定赔付金额必填"))?;
+                if amount <= Decimal::ZERO {
+                    return Err(AppError::business("核定赔付金额必须大于 0"));
+                }
+                (Claim::STATUS_APPROVED, Some(amount.to_string()))
+            }
+            "REJECT" => (Claim::STATUS_REJECTED, None),
+            _ => return Err(AppError::business("action 仅支持 APPROVE / REJECT")),
+        };
+
+        // 2) 审核人须为运营/管理员
+        let role: Option<String> = self
+            .db
+            .conn()
+            .await?
+            .exec_first(
+                "SELECT role FROM users WHERE id = ? AND deleted_at IS NULL LIMIT 1",
+                vec![req.reviewer_id],
+            )
+            .await
+            .map_err(db_error)?;
+        let is_operator = matches!(
+            role.as_deref(),
+            Some(User::ROLE_OPERATOR) | Some(User::ROLE_ADMIN)
+        );
+        if !is_operator {
+            return Err(AppError::Forbidden);
+        }
+
+        // 3) 事务内：校验当前状态为 SUBMITTED → UPDATE
+        let reviewer_id = req.reviewer_id;
+        let remark = req.remark;
+        self.db
+            .with_tx(|tx| {
+                Box::pin(async move {
+                    let cur: Option<String> = tx
+                        .exec_first(
+                            "SELECT status FROM claims WHERE id = ? AND deleted_at IS NULL LIMIT 1",
+                            vec![claim_id],
+                        )
+                        .await
+                        .map_err(db_error)?;
+                    match cur {
+                        Some(s) if s == Claim::STATUS_SUBMITTED => {}
+                        _ => return Err(AppError::business("理赔单不存在或已审核")),
+                    }
+
+                    let params: Vec<Value> = vec![
+                        Value::from(status.to_string()),
+                        value_opt_str(approved_amount_str),
+                        Value::from(reviewer_id),
+                        value_opt_str(remark),
+                        Value::from(claim_id),
+                    ];
+                    tx.exec_drop(
+                        "UPDATE claims \
+                         SET status = ?, approved_amount = ?, reviewer_id = ?, \
+                             review_remark = ?, updated_at = NOW() \
+                         WHERE id = ?",
+                        params,
+                    )
+                    .await
+                    .map_err(db_error)?;
+                    Ok(())
+                })
+            })
+            .await?;
+
+        // 4) 回读整条理赔单
+        let row: Option<Row> = self
+            .db
+            .conn()
+            .await?
+            .exec_first("SELECT * FROM claims WHERE id = ? LIMIT 1", vec![claim_id])
+            .await
+            .map_err(db_error)?;
+        let row = row.ok_or_else(|| AppError::business("审核后回读失败"))?;
         row_to_claim(&row)
     }
 

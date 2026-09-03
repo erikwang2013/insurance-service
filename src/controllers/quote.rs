@@ -41,12 +41,14 @@ impl QuoteController {
             Some(id) => id,
             None => return self.reply(ctx, json_envelope(40000, "报价 id 参数无效")).await,
         };
-        // 阶段 0：QuoteService 未暴露 by_id，详情接口先占位
-        self.reply(
-            ctx,
-            json_envelope(40001, format!("报价详情接口未接入数据库（仅报价 id {}）", id)),
-        )
-        .await
+        match self.service.by_id(id).await {
+            Ok(q) => {
+                let data = serde_json::to_value(&q)
+                    .map_err(|e| RouterError::SerializeError(e.to_string()))?;
+                self.reply(ctx, ok_response(data)).await
+            }
+            Err(e) => self.reply(ctx, error_response(&e)).await,
+        }
     }
 
     async fn reply(&self, ctx: &mut Context, resp: Response) -> Result<(), RouterError> {

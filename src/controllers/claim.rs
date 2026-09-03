@@ -7,7 +7,7 @@ use axum::response::Response;
 use bee_rust::bee_router::context::RouterError;
 use bee_rust::bee_router::{Context, Controller};
 
-use crate::services::claim_service::{ClaimService, CreateClaimReq};
+use crate::services::claim_service::{ClaimService, CreateClaimReq, ReviewClaimReq};
 
 use super::{error_response, json_envelope, ok_response, query_map, read_json};
 
@@ -27,6 +27,25 @@ impl ClaimController {
             Err(resp) => return self.reply(ctx, resp).await,
         };
         match self.service.create(req).await {
+            Ok(c) => {
+                let data = serde_json::to_value(&c)
+                    .map_err(|e| RouterError::SerializeError(e.to_string()))?;
+                self.reply(ctx, ok_response(data)).await
+            }
+            Err(e) => self.reply(ctx, error_response(&e)).await,
+        }
+    }
+
+    async fn review(&self, ctx: &mut Context) -> Result<(), RouterError> {
+        let claim_id = match ctx.param("id").and_then(|s| s.parse::<i64>().ok()) {
+            Some(id) => id,
+            None => return self.reply(ctx, json_envelope(40000, "理赔单 id 参数无效")).await,
+        };
+        let req: ReviewClaimReq = match read_json(ctx).await {
+            Ok(r) => r,
+            Err(resp) => return self.reply(ctx, resp).await,
+        };
+        match self.service.review(claim_id, req).await {
             Ok(c) => {
                 let data = serde_json::to_value(&c)
                     .map_err(|e| RouterError::SerializeError(e.to_string()))?;
@@ -74,7 +93,9 @@ impl Controller for ClaimController {
     async fn handle(&self, ctx: &mut Context) -> Result<(), RouterError> {
         let path = ctx.request.uri().path().to_string();
         let method = ctx.request.method().clone();
-        if path.ends_with("/claims") && method == axum::http::Method::POST {
+        if method == axum::http::Method::POST && path.ends_with("/review") {
+            self.review(ctx).await
+        } else if path.ends_with("/claims") && method == axum::http::Method::POST {
             self.create(ctx).await
         } else if path.ends_with("/claims") {
             self.my_claims(ctx).await
