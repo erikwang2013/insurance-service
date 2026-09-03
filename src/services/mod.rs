@@ -1,6 +1,7 @@
 //! 业务服务层（MVC Service，事务边界在 Service）
 
 pub mod auth_service;
+pub mod claim_service;
 pub mod contract_service;
 pub mod order_service;
 pub mod payment_service;

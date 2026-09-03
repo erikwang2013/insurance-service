@@ -271,13 +271,16 @@ pub async fn favicon_svg() -> impl axum::response::IntoResponse {
 
 use bee_rust::bee_router::Router;
 
-use crate::controllers::{AppState, auth_handler, product_handler, search_handler};
+use crate::controllers::{
+    AppState, auth_handler, claim_handler, contract_handler, order_handler, payment_handler,
+    policy_handler, product_handler, quote_handler, search_handler,
+};
 
 /// 对接 bee_router 的路由注册（bee-rust 已激活，见 Cargo.toml [workspace.dependencies] 注释）
 ///
-/// 阶段 0→1：注册 /healthz 与业务路由（auth / products / search），控制器经
-/// `AppState` 注入各业务 Controller。剩余模块（quotes / orders / payments /
-/// policies / contracts / claims / user / admin）在后续任务按同模式挂载。
+/// 阶段 0→1：注册 /healthz 与业务路由（auth / products / quotes / orders / payments /
+/// policies / contracts / search / claims），控制器经 `AppState` 注入各业务
+/// Controller，与 `route_table()` 对齐。
 pub fn build_bee_router(state: AppState) -> axum::Router {
     let router = Router::new()
         .ns("/api/v1", |api| {
@@ -295,6 +298,29 @@ pub fn build_bee_router(state: AppState) -> axum::Router {
                 .get("/products/featured", product_handler)
                 // search（公开）
                 .get("/search", search_handler)
+                // quotes
+                .post("/quotes", quote_handler)
+                .get("/quotes/{id}", quote_handler)
+                // orders
+                .post("/orders", order_handler)
+                .get("/orders", order_handler)
+                .get("/orders/{id}", order_handler)
+                // payments
+                .post("/payments/{order_id}/prepay", payment_handler)
+                .post("/payments/{order_id}/pay", payment_handler)
+                .post("/payments/wechat/prepay", payment_handler)
+                .post("/payments/callback/{provider}", payment_handler)
+                // policies
+                .get("/policies", policy_handler)
+                .get("/policies/{id}", policy_handler)
+                // contracts
+                .get("/contracts/{id}", contract_handler)
+                .post("/contracts/{id}/sign", contract_handler)
+                .get("/contracts/{id}/sign-url", contract_handler)
+                .post("/contracts/callback/{provider}", contract_handler)
+                // claims（理赔）
+                .post("/claims", claim_handler)
+                .get("/claims", claim_handler)
         })
         .build();
     // 吉祥物 favicon + 健康检查：根路径（浏览器 / 前端直接引用）

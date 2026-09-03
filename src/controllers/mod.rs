@@ -7,7 +7,13 @@
 //! （session 恢复 → prepare → handle → finish → session 持久化）。
 
 pub mod auth;
+pub mod claim;
+pub mod contract;
+pub mod order;
+pub mod payment;
+pub mod policy;
 pub mod product;
+pub mod quote;
 pub mod search;
 
 use std::collections::HashMap;
@@ -31,9 +37,21 @@ use crate::crypto::CryptoService;
 use crate::db::Db;
 use crate::response::{ApiResponse, ResponseEnvelope};
 use crate::services::auth_service::auth_service;
+use crate::services::claim_service::ClaimService;
+use crate::services::contract_service::ContractService;
+use crate::services::order_service::OrderService;
+use crate::services::payment_service::PaymentService;
+use crate::services::policy_service::PolicyService;
+use crate::services::quote_service::QuoteService;
 
 pub use auth::AuthController;
+pub use claim::ClaimController;
+pub use contract::ContractController;
+pub use order::OrderController;
+pub use payment::PaymentController;
+pub use policy::PolicyController;
 pub use product::ProductController;
+pub use quote::QuoteController;
 pub use search::SearchController;
 
 /// 会话 TTL（滚动刷新基准；后续按业务细分）
@@ -48,6 +66,12 @@ pub struct AppState {
     pub auth: Arc<AuthController>,
     pub product: Arc<ProductController>,
     pub search: Arc<SearchController>,
+    pub claim: Arc<ClaimController>,
+    pub quote: Arc<QuoteController>,
+    pub order: Arc<OrderController>,
+    pub payment: Arc<PaymentController>,
+    pub policy: Arc<PolicyController>,
+    pub contract: Arc<ContractController>,
 }
 
 impl AppState {
@@ -69,7 +93,13 @@ impl AppState {
             db.clone(),
         )));
         let product = Arc::new(ProductController::new(db.clone()));
-        let search = Arc::new(SearchController::new(db));
+        let search = Arc::new(SearchController::new(db.clone()));
+        let claim = Arc::new(ClaimController::new(ClaimService::new(db.clone())));
+        let quote = Arc::new(QuoteController::new(QuoteService::new(db.clone())));
+        let order = Arc::new(OrderController::new(OrderService::new(db.clone())));
+        let payment = Arc::new(PaymentController::new(PaymentService::new(db.clone())));
+        let policy = Arc::new(PolicyController::new(PolicyService::new(db.clone())));
+        let contract = Arc::new(ContractController::new(ContractService::new(db)));
         Ok(Self {
             cache,
             templates,
@@ -77,6 +107,12 @@ impl AppState {
             auth,
             product,
             search,
+            claim,
+            quote,
+            order,
+            payment,
+            policy,
+            contract,
         })
     }
 
@@ -181,6 +217,54 @@ pub async fn search_handler(
     request: Request<Body>,
 ) -> Response {
     state.run(state.search.as_ref(), params, request).await
+}
+
+pub async fn claim_handler(
+    State(state): State<AppState>,
+    Path(params): Path<HashMap<String, String>>,
+    request: Request<Body>,
+) -> Response {
+    state.run(state.claim.as_ref(), params, request).await
+}
+
+pub async fn quote_handler(
+    State(state): State<AppState>,
+    Path(params): Path<HashMap<String, String>>,
+    request: Request<Body>,
+) -> Response {
+    state.run(state.quote.as_ref(), params, request).await
+}
+
+pub async fn order_handler(
+    State(state): State<AppState>,
+    Path(params): Path<HashMap<String, String>>,
+    request: Request<Body>,
+) -> Response {
+    state.run(state.order.as_ref(), params, request).await
+}
+
+pub async fn payment_handler(
+    State(state): State<AppState>,
+    Path(params): Path<HashMap<String, String>>,
+    request: Request<Body>,
+) -> Response {
+    state.run(state.payment.as_ref(), params, request).await
+}
+
+pub async fn policy_handler(
+    State(state): State<AppState>,
+    Path(params): Path<HashMap<String, String>>,
+    request: Request<Body>,
+) -> Response {
+    state.run(state.policy.as_ref(), params, request).await
+}
+
+pub async fn contract_handler(
+    State(state): State<AppState>,
+    Path(params): Path<HashMap<String, String>>,
+    request: Request<Body>,
+) -> Response {
+    state.run(state.contract.as_ref(), params, request).await
 }
 
 pub async fn healthz_handler() -> Response {
