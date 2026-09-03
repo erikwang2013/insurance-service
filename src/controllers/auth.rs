@@ -1,4 +1,4 @@
-//! 认证控制器：注册 / 登录 / 微信登录 / 刷新 / 登出
+//! 认证控制器：注册 / 登录 / 微信登录 / 刷新 / 登出 / 我的资料（user/me）
 
 use async_trait::async_trait;
 use axum::http::StatusCode;
@@ -7,9 +7,9 @@ use axum::response::Response;
 use bee_rust::bee_router::context::RouterError;
 use bee_rust::bee_router::{Context, Controller};
 
-use crate::services::auth_service::{AuthService, LoginReq, RegisterReq, WechatLoginReq};
+use crate::services::auth_service::{AuthService, LoginReq, RefreshReq, RegisterReq, WechatLoginReq};
 
-use super::{error_response, json_envelope, ok_response, read_json};
+use super::{error_response, json_envelope, ok_response, query_map, read_json};
 
 /// 认证控制器（持有 AuthService，按请求路径分派动作）
 pub struct AuthController {
@@ -67,15 +67,41 @@ impl AuthController {
     }
 
     async fn refresh(&self, ctx: &mut Context) -> Result<(), RouterError> {
-        // 阶段 0：刷新令牌尚未接入数据库（任务 #3 后随登录闭环实现）
-        self.reply(ctx, json_envelope(40001, "刷新令牌接口未接入数据库（任务 #3）"))
-            .await
+        let req: RefreshReq = match read_json(ctx).await {
+            Ok(r) => r,
+            Err(resp) => return self.reply(ctx, resp).await,
+        };
+        match self.service.refresh(&req.refresh_token).await {
+            Ok(r) => {
+                let data = serde_json::to_value(&r)
+                    .map_err(|e| RouterError::SerializeError(e.to_string()))?;
+                self.reply(ctx, ok_response(data)).await
+            }
+            Err(e) => self.reply(ctx, error_response(&e)).await,
+        }
     }
 
     async fn logout(&self, ctx: &mut Context) -> Result<(), RouterError> {
         // 阶段 0：无服务端会话态，直接成功（后续随 session/令牌注销闭环实现）
         self.reply(ctx, ok_response(serde_json::json!({ "logout": true })))
             .await
+    }
+
+    /// 当前用户资料（GET /user/me，user_id 经 query 显式传入，见 claim.rs my_claims）
+    async fn me(&self, ctx: &mut Context) -> Result<(), RouterError> {
+        let q = query_map(ctx.request.uri().query());
+        let user_id: i64 = match q.get("user_id").and_then(|s| s.parse().ok()) {
+            Some(id) => id,
+            None => return self.reply(ctx, json_envelope(40000, "缺少 user_id")).await,
+        };
+        match self.service.me(user_id).await {
+            Ok(u) => {
+                let data = serde_json::to_value(&u)
+                    .map_err(|e| RouterError::SerializeError(e.to_string()))?;
+                self.reply(ctx, ok_response(data)).await
+            }
+            Err(e) => self.reply(ctx, error_response(&e)).await,
+        }
     }
 
     /// 将已构造好的响应写入 Context（bee 管线以 HTTP 200 + 业务码信封返回）
@@ -104,6 +130,8 @@ impl Controller for AuthController {
             self.refresh(ctx).await
         } else if path.ends_with("/logout") {
             self.logout(ctx).await
+        } else if path.ends_with("/user/me") {
+            self.me(ctx).await
         } else {
             ctx.abort(StatusCode::NOT_FOUND, "接口不存在");
             Ok(())

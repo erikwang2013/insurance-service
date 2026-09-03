@@ -303,6 +303,7 @@ pub fn build_bee_router(state: AppState) -> axum::Router {
                 .post("/auth/wechat/login", auth_handler)
                 .post("/auth/refresh", auth_handler)
                 .post("/auth/logout", auth_handler)
+                .get("/user/me", auth_handler)
                 // products（公开）
                 .get("/products", product_handler)
                 .get("/products/{id}", product_handler)

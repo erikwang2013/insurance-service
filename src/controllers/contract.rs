@@ -56,12 +56,21 @@ impl ContractController {
     }
 
     async fn sign_url(&self, ctx: &mut Context) -> Result<(), RouterError> {
-        // 阶段 0：电子签仅 MockProvider，无外部签署 URL；返回占位响应
-        self.reply(
-            ctx,
-            json_envelope(40001, "电子签署 URL 尚未接入外部渠道（Mock 阶段）"),
-        )
-        .await
+        // Mock 签署：已建合同返回可跳转的 Mock 签署 URL（provider='MOCK'，
+        // 形如 /sign/mock/{flow}），前端凭该地址进入 Mock 签署；合同不存在
+        // 或已终止按统一错误语义返回。真实验签渠道（e签宝）属规划，不在此实现。
+        let id = match ctx.param("id").and_then(|s| s.parse::<i64>().ok()) {
+            Some(id) => id,
+            None => return self.reply(ctx, json_envelope(40000, "合同 id 参数无效")).await,
+        };
+        match self.service.sign_url(id).await {
+            Ok(u) => {
+                let data = serde_json::to_value(&u)
+                    .map_err(|e| RouterError::SerializeError(e.to_string()))?;
+                self.reply(ctx, ok_response(data)).await
+            }
+            Err(e) => self.reply(ctx, error_response(&e)).await,
+        }
     }
 
     async fn callback(&self, ctx: &mut Context) -> Result<(), RouterError> {

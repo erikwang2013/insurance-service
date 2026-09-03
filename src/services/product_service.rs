@@ -3,15 +3,16 @@
 //! 基于 db 层执行参数化查询；SQL 仅由受信常量拼接，值一律经参数绑定（任务 #3）。
 //! 运营侧建档/上下架（任务 #7）也落于此文件：与公开 list/detail 共用 Db 与模型。
 
+use chrono::{DateTime, NaiveDateTime, Utc};
 use mysql_async::prelude::Queryable;
-use mysql_async::Value;
+use mysql_async::{Row, Value};
 use rust_decimal::Decimal;
 use serde::Deserialize;
 
 use crate::db::{db_error, Db};
 use crate::error::{AppError, Result};
 use crate::models::user::User;
-use crate::models::InsuranceProduct;
+use crate::models::{InsuranceProduct, InsuranceProductClause};
 
 /// 产品列表（分页/筛选）；`status` 为空串时不过滤状态
 pub async fn list(db: &Db, status: &str, page: u32, size: u32) -> Result<Vec<InsuranceProduct>> {
@@ -41,6 +42,44 @@ pub async fn detail(db: &Db, id: i64) -> Result<InsuranceProduct> {
     )
     .await?
     .ok_or(AppError::NotFound)
+}
+
+/// 产品条款列表（公开）：先确认产品存在（未软删），再查条款（未软删），
+/// 按 sort_order 升序；产品不存在或该产品无条款 → NotFound。
+pub async fn clauses(db: &Db, product_id: i64) -> Result<Vec<InsuranceProductClause>> {
+    detail(db, product_id).await?;
+    let mut conn = db.conn().await?;
+    let rows: Vec<Row> = conn
+        .exec(
+            "SELECT * FROM insurance_product_clauses \
+             WHERE product_id = ? AND deleted_at IS NULL \
+             ORDER BY sort_order ASC, id ASC",
+            vec![product_id],
+        )
+        .await
+        .map_err(db_error)?;
+    let items: Vec<InsuranceProductClause> = rows.iter().map(row_to_clause).collect();
+    if items.is_empty() {
+        return Err(AppError::NotFound);
+    }
+    Ok(items)
+}
+
+/// 首页精选（公开）：is_featured=1 且 ON_SALE 且未软删；分页/limit 语义同 list
+pub async fn featured(db: &Db, page: u32, size: u32) -> Result<Vec<InsuranceProduct>> {
+    let size = size.clamp(1, 100) as usize;
+    let offset = ((page.max(1) as usize) - 1) * size;
+    db.query_all(
+        "SELECT * FROM insurance_products \
+         WHERE deleted_at IS NULL AND status = ? AND is_featured = 1 \
+         ORDER BY id DESC LIMIT ? OFFSET ?",
+        vec![
+            InsuranceProduct::STATUS_ON_SALE.to_string(),
+            size.to_string(),
+            offset.to_string(),
+        ],
+    )
+    .await
 }
 
 // ---------- 运营侧（admin，任务 #7）----------
@@ -252,4 +291,38 @@ pub async fn admin_change_status(
 
 fn value_opt_str(v: Option<String>) -> Value {
     v.map(Value::from).unwrap_or(Value::NULL)
+}
+
+// ---------- helpers: Row → InsuranceProductClause（与 quote_service 同模式） ----------
+
+/// 读行 → DateTime<Utc>（DATETIME(3) 二进制协议以 NaiveDateTime 到达）
+fn dt_row(row: &Row, col: &str) -> DateTime<Utc> {
+    row.get::<NaiveDateTime, &str>(col)
+        .unwrap_or_default()
+        .and_utc()
+}
+
+/// 读行 → Option<DateTime<Utc>>
+fn dt_opt_row(row: &Row, col: &str) -> Option<DateTime<Utc>> {
+    row.get::<Option<NaiveDateTime>, &str>(col)
+        .flatten()
+        .map(|d| d.and_utc())
+}
+
+/// 从 Row 重建条款（TINYINT(1) → bool 同 db.rs InsuranceProduct 写法）
+fn row_to_clause(row: &Row) -> InsuranceProductClause {
+    InsuranceProductClause {
+        id: row.get("id").unwrap_or_default(),
+        product_id: row.get("product_id").unwrap_or_default(),
+        clause_type: row.get("clause_type").unwrap_or_default(),
+        title: row.get("title").unwrap_or_default(),
+        content: row.get("content").unwrap_or_default(),
+        sort_order: row.get("sort_order").unwrap_or_default(),
+        is_required: row.get("is_required").unwrap_or_default(),
+        version: row.get("version").unwrap_or_default(),
+        status: row.get("status").unwrap_or_default(),
+        created_at: dt_row(row, "created_at"),
+        updated_at: dt_row(row, "updated_at"),
+        deleted_at: dt_opt_row(row, "deleted_at"),
+    }
 }

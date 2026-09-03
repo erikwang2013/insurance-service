@@ -10,7 +10,7 @@
 |------|-----|
 | 语言 / 版本 | Rust 2024 edition（rust-version ≥ 1.87） |
 | 许可证 | Apache-2.0 |
-| 版本 | 1.3.0 |
+| 版本 | 1.4.0 |
 | HTTP 框架 | axum 0.8 + bee_rust（bee_router / bee_orm / 过滤器管线） |
 | 存储 | MySQL 8.4（业务库）· Redis / 内存缓存（会话）· OpenSearch（搜索，可选） |
 
@@ -103,13 +103,19 @@ insurance-service/
 │   ├── search/                # searchable_impl · sync_worker
 │   └── utils/                 # validator · id_generator
 └── tests/
-    ├── common/mod.rs          # 测试共享设施（测试库连接 / JWT 配置 / 唯一值 / 清理）
-    ├── auth_service_test.rs   # 注册 / 登录 / 微信 stub（6 项）
-    ├── product_service_test.rs# 商品增删改查 / 过滤 / 软删（5 项）
-    ├── search_service_test.rs # 搜索命中 / 无果 / 分页 / 索引路由（4 项）
-    ├── security_test.rs       # JWT 校验 / 过期 / 角色 RBAC（18 项）
-    ├── api_auth_test.rs       # API 层鉴权 E2E（8 项）
-    └── claim_service_test.rs  # 理赔报案 / 归属校验 / 分页（5 项）
+    ├── common/mod.rs           # 测试共享设施（测试库连接 / JWT 配置 / 唯一值 / 清理）
+    ├── auth_service_test.rs    # 注册 / 登录 / 微信 stub（6 项）
+    ├── product_service_test.rs # 商品增删改查 / 过滤 / 软删（5 项）
+    ├── search_service_test.rs  # 搜索命中 / 无果 / 分页 / 索引路由（4 项）
+    ├── quote_service_test.rs   # 报价试算 / 详情 / 鉴权（3 项）
+    ├── security_test.rs        # JWT 校验 / 过期 / 角色 RBAC（18 项）
+    ├── api_auth_test.rs        # API 层鉴权 E2E（8 项）
+    ├── claim_service_test.rs   # 理赔报案 / 归属校验 / 分页（5 项）
+    ├── claim_review_test.rs    # 理赔审核 APPROVE / REJECT（5 项）
+    ├── admin_product_test.rs   # 商品上架 / 下架管理端（5 项）
+    ├── auth_fix_test.rs        # 认证修复回归：#10 修复项（8 项）
+    ├── product_fix_test.rs     # 产品模块修复回归：HTTP 层（4 项）
+    └── contract_fix_test.rs    # 签约修复回归：sign-url Mock 真实化（4 项）
 ```
 
 ## 使用说明
@@ -156,8 +162,8 @@ cargo test           # 全部测试（单元 + 集成）
 ```
 
 - 依赖 MySQL 的集成测试在未配置 `DATABASE_URL` 或未执行 `install.sql` 时会打印 `SKIP` 并跳过，
-  保证无库环境 `cargo test` 不失败（共 64 项，认证 6 / 商品 5 / 运营商品 5 / 搜索 4 / 安全 18 /
-  API E2E 8 / 理赔 5 / 理赔审核 5 / 报价 3 / 单元 5）。
+  保证无库环境 `cargo test` 不失败（共 80 项：单元 5 / 认证 6 / 商品 5 / 运营商品 5 / 搜索 4 /
+  报价 3 / 安全 18 / API E2E 8 / 理赔 5 / 理赔审核 5 / 修复回归 16（认证 8 · 商品 4 · 签约 4））。
 - 按项目约定（CLAUDE.md）：代码变更后**先跑测试、再提交**。
 
 ### 已实现 API 概览（阶段 0 → 1）
@@ -169,6 +175,7 @@ cargo test           # 全部测试（单元 + 集成）
 | POST | `/api/v1/auth/login` | 账号密码登录 |
 | POST | `/api/v1/auth/wechat/login` | 微信登录（规划中，stub 报错） |
 | POST | `/api/v1/auth/refresh` · `/api/v1/auth/logout` | 令牌刷新 / 注销 |
+| GET | `/api/v1/user/me` | 当前用户资料（Bearer Token） |
 | GET | `/api/v1/products` · `/api/v1/products/{id}` | 商品列表 / 详情 |
 | GET | `/api/v1/products/{id}/clauses` | 商品条款 |
 | GET | `/api/v1/products/featured` | 精选商品 |
@@ -182,14 +189,14 @@ cargo test           # 全部测试（单元 + 集成）
 | POST | `/api/v1/payments/callback/{provider}` | 支付回调 |
 | GET | `/api/v1/policies` · `/api/v1/policies/{id}` | 我的保单 / 保单详情 |
 | GET | `/api/v1/contracts/{id}` | 电子合同详情 |
-| POST | `/api/v1/contracts/{id}/sign` · GET `/sign-url` | 合同签署 / 签署 URL（占位 40001） |
+| POST | `/api/v1/contracts/{id}/sign` · GET `/sign-url` | 合同签署 / 签署 URL |
 | POST | `/api/v1/contracts/callback/{provider}` | 签署回调 |
 | POST | `/api/v1/claims` | 理赔报案（校验保单归属） |
 | GET | `/api/v1/claims?user_id=&page=&size=` | 我的理赔（分页） |
 | POST | `/api/v1/claims/{id}/review` | 理赔审核 APPROVE / REJECT（OPERATOR / ADMIN） |
 | POST | `/api/v1/admin/products` · `/api/v1/admin/products/{id}/status` | 商品建档 / 上下架（OPERATOR / ADMIN） |
 
-更完整的路由表（含规划中的 `/user/me`、运营后台 `/admin/*` 等）见 `src/routes.rs` `route_table()`；
+完整路由表（共 31 个业务端点，含 `/user/me`、运营后台 `/admin/*`）见 `src/routes.rs` `route_table()`；
 库表设计见 `docs/db-schema.md` 与 `install.sql`。
 
 ---

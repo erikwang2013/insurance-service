@@ -6,7 +6,7 @@ use chrono::{DateTime, NaiveDateTime, Utc};
 use mysql_async::prelude::Queryable;
 use mysql_async::Value;
 use mysql_async::Row;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::db::db_error;
@@ -30,6 +30,13 @@ fn default_type() -> String { "POLICY".to_string() }
 
 pub struct ContractService {
     db: Db,
+}
+
+/// sign-url 响应：Mock 签署地址（前端跳转进入 Mock 签署页）
+#[derive(Debug, Serialize)]
+pub struct ContractSignUrl {
+    pub sign_url: String,
+    pub provider: String,
 }
 
 impl ContractService {
@@ -110,6 +117,32 @@ impl ContractService {
             .await
             .map_err(db_error)?;
         row.map(|r| row_to_contract(&r)).transpose()?.ok_or(AppError::NotFound)
+    }
+
+    /// Mock 签署 URL：合同存在且未进入终态（作废/过期/拒签）时返回可跳转的
+    /// Mock 签署地址（provider='MOCK'）。真实验签渠道（e签宝）属规划，未接入。
+    ///
+    /// 地址与 MockEsignProvider 语义一致：`/sign/mock/{sign_flow_id}`；合同尚无
+    /// 平台流程 ID 时按 MockEsignProvider::create_contract 对同合同的命名回退，
+    /// 保证 URL 稳定可派生。
+    pub async fn sign_url(&self, id: i64) -> Result<ContractSignUrl> {
+        let c = self.by_id(id).await?;
+        match c.status.as_str() {
+            Contract::STATUS_VOID | Contract::STATUS_EXPIRED | Contract::STATUS_REJECTED => {
+                return Err(AppError::business("合同已终止，不可签署"));
+            }
+            _ => {}
+        }
+        if c.provider != "MOCK" {
+            return Err(AppError::business("电子签署渠道未接入（当前仅支持 MOCK）"));
+        }
+        let flow = c
+            .sign_flow_id
+            .unwrap_or_else(|| format!("MOCK-FLOW-{}", c.contract_no));
+        Ok(ContractSignUrl {
+            sign_url: format!("/sign/mock/{flow}"),
+            provider: c.provider,
+        })
     }
 
     pub async fn by_user(&self, user_id: i64, page: u32, size: u32) -> Result<Vec<Contract>> {

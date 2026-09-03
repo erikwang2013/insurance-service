@@ -43,6 +43,13 @@ pub struct WechatLoginReq {
     pub code: String,
 }
 
+/// 令牌刷新请求
+#[derive(Debug, Deserialize)]
+pub struct RefreshReq {
+    /// 登录/注册时签发的 refresh_token（另一枚同型 JWT，见 issue_tokens）
+    pub refresh_token: String,
+}
+
 /// 令牌对（Access + Refresh）
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TokenPair {
@@ -180,6 +187,39 @@ impl AuthService {
     /// 微信登录 stub（阶段 3 实现 code2session）
     pub async fn wechat_login(&self, _req: WechatLoginReq) -> Result<LoginResult> {
         Err(AppError::business("微信登录未接入（阶段 3 code2session 实现）"))
+    }
+
+    /// 令牌刷新：校验 refresh_token（与 access 同型 JWT，签名/过期/issuer 由
+    /// `JwtService::verify_token` 把关，失败 → Unauthorized）→ 按载荷 `sub`
+    /// 查用户，须存在、未删除且 status='ACTIVE' → 按库中最新的 username/role 重签双令牌。
+    pub async fn refresh(&self, refresh_token: &str) -> Result<LoginResult> {
+        let claims = self.jwt.verify_token(refresh_token)?;
+        let user: Option<User> = self
+            .db
+            .query_one(
+                "SELECT * FROM users WHERE id = ? AND deleted_at IS NULL LIMIT 1",
+                vec![claims.sub],
+            )
+            .await?;
+        let user = user.ok_or(AppError::Unauthorized)?;
+        if user.status != User::STATUS_ACTIVE {
+            return Err(AppError::business("账号已禁用或冻结，无法刷新令牌"));
+        }
+        let role = Role::from_str(&user.role).unwrap_or(Role::User);
+        self.issue_tokens(user.id, &user.username, role)
+    }
+
+    /// 当前用户资料（user/me）：按 id 查未删除用户，不存在 → NotFound。
+    /// 返回完整 `User`，敏感字段（phone_enc/id_card_enc/password_hash）由模型
+    /// `#[serde(skip_serializing)]` 保证不进 JSON 输出。
+    pub async fn me(&self, user_id: i64) -> Result<User> {
+        self.db
+            .query_one(
+                "SELECT * FROM users WHERE id = ? AND deleted_at IS NULL LIMIT 1",
+                vec![user_id],
+            )
+            .await?
+            .ok_or(AppError::NotFound)
     }
 
     /// 签发双令牌（Access + Refresh）
