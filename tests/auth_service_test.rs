@@ -1,7 +1,7 @@
 //! 认证服务集成测试（任务 #5，MySQL 集成）
 //!
 //! 覆盖：注册（唯一用户名 + 双令牌签发）、重复用户名拒绝、
-//! 登录（正确/错误密码、未注册用户）、微信登录 stub。
+//! 登录（正确/错误密码、未注册用户）、微信登录（未配置降级）。
 //!
 //! 依赖 `insurance_service` 库 + 本地 MySQL（install.sql 建库）。
 //! MySQL 不可用时 SKIP（打印提示并提前返回），保证 `cargo test` 在无库环境不失败。
@@ -14,7 +14,7 @@ use insurance_service::services::auth_service::{AuthService, LoginReq, RegisterR
 /// 构造 AuthService（测试固定密钥/配置 + 测试库连接）
 async fn service() -> Option<AuthService> {
     let db = common::test_db().await?;
-    Some(AuthService::new(common::jwt_cfg(3600), common::crypto(), db))
+    Some(AuthService::new(common::jwt_cfg(3600), common::crypto(), db, common::wechat_client()))
 }
 
 /// 清理辅助：按 DATABASE_URL 独立建一个连接池（共享同一数据库），仅用于删除测试行。
@@ -157,19 +157,20 @@ async fn login_unknown_user_rejected() {
 }
 
 #[tokio::test]
-async fn wechat_login_stub_rejected() {
+async fn wechat_login_unconfigured_degrades() {
     let Some(svc) = service().await else {
         eprintln!("SKIP: MySQL 不可用（需 DATABASE_URL + install.sql 建库）");
         return;
     };
+    // 任务 B 接线后：未配置 WECHAT_APPID/SECRET → code2session 降级为业务错误（不发网络请求）
     let err = svc
         .wechat_login(WechatLoginReq {
             code: "wx-code-123".to_string(),
         })
         .await
-        .expect_err("微信登录 stub 应失败");
+        .expect_err("微信登录（未配置）应降级为业务错误");
     match err {
-        AppError::Business(msg) => assert!(msg.contains("微信登录未接入"), "msg={msg}"),
+        AppError::Business(msg) => assert!(msg.contains("未配置"), "msg={msg}"),
         other => panic!("预期 Business 错误，得到 {other:?}"),
     }
 }

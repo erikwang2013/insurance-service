@@ -5,3 +5,4 @@
 
 pub mod esign;
 pub mod payment;
+pub mod wechat;

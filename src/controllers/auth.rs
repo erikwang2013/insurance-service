@@ -7,7 +7,10 @@ use axum::response::Response;
 use bee_rust::bee_router::context::RouterError;
 use bee_rust::bee_router::{Context, Controller};
 
-use crate::services::auth_service::{AuthService, LoginReq, RefreshReq, RegisterReq, WechatLoginReq};
+use crate::services::auth_service::{
+    AuthService, BindPhoneReq, ChangePasswordReq, LoginReq, RefreshReq, RegisterReq,
+    WechatLoginReq,
+};
 
 use super::{error_response, json_envelope, ok_response, query_map, read_json};
 
@@ -87,6 +90,52 @@ impl AuthController {
             .await
     }
 
+    /// 修改密码（POST /user/password，user_id 经 query 显式传入，同 me()）
+    async fn change_password(&self, ctx: &mut Context) -> Result<(), RouterError> {
+        let q = query_map(ctx.request.uri().query());
+        let user_id: i64 = match q.get("user_id").and_then(|s| s.parse().ok()) {
+            Some(id) => id,
+            None => return self.reply(ctx, json_envelope(40000, "缺少 user_id")).await,
+        };
+        let req: ChangePasswordReq = match read_json(ctx).await {
+            Ok(r) => r,
+            Err(resp) => return self.reply(ctx, resp).await,
+        };
+        match self
+            .service
+            .change_password(user_id, &req.old_password, &req.new_password)
+            .await
+        {
+            Ok(_) => self
+                .reply(ctx, ok_response(serde_json::json!({ "changed": true })))
+                .await,
+            Err(e) => self.reply(ctx, error_response(&e)).await,
+        }
+    }
+
+    /// 换绑手机（POST /user/phone，user_id 经 query 显式传入，同 me()）
+    async fn bind_phone(&self, ctx: &mut Context) -> Result<(), RouterError> {
+        let q = query_map(ctx.request.uri().query());
+        let user_id: i64 = match q.get("user_id").and_then(|s| s.parse().ok()) {
+            Some(id) => id,
+            None => return self.reply(ctx, json_envelope(40000, "缺少 user_id")).await,
+        };
+        let req: BindPhoneReq = match read_json(ctx).await {
+            Ok(r) => r,
+            Err(resp) => return self.reply(ctx, resp).await,
+        };
+        match self
+            .service
+            .bind_phone(user_id, &req.password, &req.new_phone)
+            .await
+        {
+            Ok(_) => self
+                .reply(ctx, ok_response(serde_json::json!({ "bound": true })))
+                .await,
+            Err(e) => self.reply(ctx, error_response(&e)).await,
+        }
+    }
+
     /// 当前用户资料（GET /user/me，user_id 经 query 显式传入，见 claim.rs my_claims）
     async fn me(&self, ctx: &mut Context) -> Result<(), RouterError> {
         let q = query_map(ctx.request.uri().query());
@@ -130,6 +179,10 @@ impl Controller for AuthController {
             self.refresh(ctx).await
         } else if path.ends_with("/logout") {
             self.logout(ctx).await
+        } else if path.ends_with("/user/password") {
+            self.change_password(ctx).await
+        } else if path.ends_with("/user/phone") {
+            self.bind_phone(ctx).await
         } else if path.ends_with("/user/me") {
             self.me(ctx).await
         } else {

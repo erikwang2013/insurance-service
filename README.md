@@ -10,7 +10,7 @@
 |------|-----|
 | 语言 / 版本 | Rust 2024 edition（rust-version ≥ 1.87） |
 | 许可证 | Apache-2.0 |
-| 版本 | 1.4.0 |
+| 版本 | 1.5.0 |
 | HTTP 框架 | axum 0.8 + bee_rust（bee_router / bee_orm / 过滤器管线） |
 | 存储 | MySQL 8.4（业务库）· Redis / 内存缓存（会话）· OpenSearch（搜索，可选） |
 
@@ -42,7 +42,7 @@
 
 ![项目功能](docs/features.svg)
 
-- **用户与认证**：注册（用户名唯一 + argon2 口令哈希）、登录（账号密码；微信登录规划中）、
+- **用户与认证**：注册（用户名唯一 + argon2 口令哈希）、登录（账号密码；微信登录 code2session 客户端已配置化，凭据未配置时降级报错）、
   JWT 双令牌（access 短时效 + refresh 长时效）与 RBAC 角色（USER / AGENT / OPERATOR / ADMIN）。
 - **保险商品**：列表分页 / 状态过滤 / 精选位、详情、关联条款阅读，运营后台建档与上架 / 下架 / 停售（OPERATOR / ADMIN）。
 - **全文搜索**：当前 MySQL LIKE（带分页保护），规划 OpenSearch 索引 + 同步 Worker，未就绪自动降级。
@@ -79,7 +79,7 @@ insurance-service/
 │   ├── main.rs                # 启动入口：init → 配置 → AppState → 路由 → serve
 │   ├── lib.rs                 # 库入口（集成测试依赖）
 │   ├── config.rs              # AppConfig：从环境变量 + config/app.toml 加载
-│   ├── routes.rs              # 数据驱动路由表（31 个业务端点）+ 已挂载 handler
+│   ├── routes.rs              # 数据驱动路由表（35 个业务端点）+ 已挂载 handler
 │   ├── db.rs                  # mysql_async 连接池与查询 / 事务封装
 │   ├── error.rs               # AppError（BadRequest / Unauthorized / NotFound / Business…）
 │   ├── controllers/mod.rs     # AppState · bee 管线 run() · 统一信封
@@ -162,8 +162,9 @@ cargo test           # 全部测试（单元 + 集成）
 ```
 
 - 依赖 MySQL 的集成测试在未配置 `DATABASE_URL` 或未执行 `install.sql` 时会打印 `SKIP` 并跳过，
-  保证无库环境 `cargo test` 不失败（共 80 项：单元 5 / 认证 6 / 商品 5 / 运营商品 5 / 搜索 4 /
-  报价 3 / 安全 18 / API E2E 8 / 理赔 5 / 理赔审核 5 / 修复回归 16（认证 8 · 商品 4 · 签约 4））。
+  保证无库环境 `cargo test` 不失败（v1.5.0 全量 107 项全绿：单元 13 + 集成 94）。集成测试覆盖：
+  认证（含微信未配置降级）、API 鉴权 E2E、交易闭环（报价→订单→支付回调→保单签发）、
+  保单生命周期（续保/退保）、限流、用户中心（改密/换绑）、运营统计、理赔、商品、修复回归等。
 - 按项目约定（CLAUDE.md）：代码变更后**先跑测试、再提交**。
 
 ### 已实现 API 概览（阶段 0 → 1）
@@ -173,7 +174,7 @@ cargo test           # 全部测试（单元 + 集成）
 | GET | `/healthz` | 健康检查 |
 | POST | `/api/v1/auth/register` | 注册（返回双令牌） |
 | POST | `/api/v1/auth/login` | 账号密码登录 |
-| POST | `/api/v1/auth/wechat/login` | 微信登录（规划中，stub 报错） |
+| POST | `/api/v1/auth/wechat/login` | 微信登录（code2session 客户端已配置化，未配置凭据时降级报错；openid 绑定期待阶段 3） |
 | POST | `/api/v1/auth/refresh` · `/api/v1/auth/logout` | 令牌刷新 / 注销 |
 | GET | `/api/v1/user/me` | 当前用户资料（Bearer Token） |
 | GET | `/api/v1/products` · `/api/v1/products/{id}` | 商品列表 / 详情 |
@@ -196,8 +197,8 @@ cargo test           # 全部测试（单元 + 集成）
 | POST | `/api/v1/claims/{id}/review` | 理赔审核 APPROVE / REJECT（OPERATOR / ADMIN） |
 | POST | `/api/v1/admin/products` · `/api/v1/admin/products/{id}/status` | 商品建档 / 上下架（OPERATOR / ADMIN） |
 
-完整路由表（共 31 个业务端点，含 `/user/me`、运营后台 `/admin/*`）见 `src/routes.rs` `route_table()`；
-库表设计见 `docs/db-schema.md` 与 `install.sql`。
+完整路由表（共 35 个业务端点，含 `/user/me`、`/user/password`、`/user/phone`、运营后台 `/admin/*`）
+见 `src/routes.rs` `route_table()`；库表设计见 `docs/db-schema.md` 与 `install.sql`。
 
 ---
 

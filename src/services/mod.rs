@@ -9,3 +9,4 @@ pub mod policy_service;
 pub mod product_service;
 pub mod quote_service;
 pub mod search_service;
+pub mod stats_service;

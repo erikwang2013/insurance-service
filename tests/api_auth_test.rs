@@ -50,6 +50,10 @@ fn make_app() -> Result<Router, String> {
         log: insurance_service::config::LogConfig {
             level: "info".into(),
         },
+        wechat: insurance_service::config::WechatConfig {
+            app_id: String::new(),
+            app_secret: String::new(),
+        },
     };
     let state = AppState::new(&cfg)?;
     Ok(routes::build_bee_router(state))

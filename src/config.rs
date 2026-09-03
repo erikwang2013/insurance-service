@@ -57,6 +57,16 @@ pub struct LogConfig {
     pub level: String,
 }
 
+/// 微信小程序登录渠道配置（code2session）
+///
+/// 凭据（WECHAT_APPID / WECHAT_SECRET）注入即激活；任一为空视为未配置，
+/// 渠道客户端不会发起任何网络请求（见 `providers/wechat.rs`）。
+#[derive(Debug, Clone, Deserialize)]
+pub struct WechatConfig {
+    pub app_id: String,
+    pub app_secret: String,
+}
+
 /// 应用总配置
 #[derive(Debug, Clone, Deserialize)]
 pub struct AppConfig {
@@ -67,6 +77,7 @@ pub struct AppConfig {
     pub jwt: JwtConfig,
     pub crypto: CryptoConfig,
     pub log: LogConfig,
+    pub wechat: WechatConfig,
 }
 
 /// 从环境变量读取配置（手写实现，替代 bee_config）
@@ -107,6 +118,10 @@ impl AppConfig {
         let log = LogConfig {
             level: env_or("RUST_LOG", "info"),
         };
+        let wechat = WechatConfig {
+            app_id: env_or("WECHAT_APPID", ""),
+            app_secret: env_or("WECHAT_SECRET", ""),
+        };
         Ok(AppConfig {
             server,
             database,
@@ -115,6 +130,7 @@ impl AppConfig {
             jwt,
             crypto,
             log,
+            wechat,
         })
     }
 

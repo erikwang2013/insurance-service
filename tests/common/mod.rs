@@ -64,6 +64,16 @@ pub fn crypto() -> insurance_service::crypto::CryptoService {
     insurance_service::crypto::CryptoService::from_key(&[7u8; 32]).expect("固定密钥构造")
 }
 
+/// 空凭据微信客户端（未配置分支，code2session 不发网络请求）。
+pub fn wechat_client() -> insurance_service::providers::wechat::WechatClient {
+    insurance_service::providers::wechat::WechatClient::from_config(
+        insurance_service::config::WechatConfig {
+            app_id: String::new(),
+            app_secret: String::new(),
+        },
+    )
+}
+
 /// 独立建一个连接池，用于清理测试插入的行（与 app 共享同一 DATABASE_URL）。
 /// 清理失败不向上冒泡（测试收尾容错）。
 pub async fn delete_user_by_conn(db_url: &str, username: &str) {

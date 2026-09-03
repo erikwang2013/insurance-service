@@ -1,8 +1,11 @@
 //! 保单服务（交易闭环）
 //!
 //! 支付成功后签发保单：校验订单已 PAID → INSERT policy → 订单进 POLICY_ISSUED → 回读。
+//! 另提供续保（renew，原单生成一条 RENEW 保单并接续保障期）与退保（lapse，
+//! ACTIVE → SURRENDERED）。状态机见 `Policy` 模型注释：
+//! `PENDING_ISSUE → ACTIVE → EXPIRED / CANCELLED / SURRENDERED / LAPSED`。
 
-use chrono::{DateTime, NaiveDate, NaiveDateTime, Utc};
+use chrono::{DateTime, Datelike, NaiveDate, NaiveDateTime, Utc};
 use mysql_async::prelude::Queryable;
 use mysql_async::Value;
 use mysql_async::Row;
@@ -14,6 +17,11 @@ use crate::db::db_error;
 use crate::db::Db;
 use crate::error::{AppError, Result};
 use crate::models::policy::Policy;
+
+/// 签发类型常量（policies.issue_type）：续保单
+const ISSUE_TYPE_RENEW: &str = "RENEW";
+/// 审计动作常量（audit_logs.action）：退保
+const POLICY_ACTION_LAPSE: &str = "POLICY_LAPSE";
 
 #[derive(Debug, Deserialize)]
 pub struct IssuePolicyReq {
@@ -77,17 +85,13 @@ impl PolicyService {
                         .await
                         .map_err(db_error)?;
                     let q = q.ok_or_else(|| AppError::business("报价不存在"))?;
-                    let parse_date =
-                        |s: String| NaiveDate::parse_from_str(&s, "%Y-%m-%d").unwrap_or_default();
                     let effective_date: NaiveDate = q
-                        .get::<Option<String>, &str>("effective_date")
+                        .get::<Option<NaiveDate>, &str>("effective_date")
                         .flatten()
-                        .map(parse_date)
                         .unwrap_or_else(|| Utc::now().date_naive());
                     let expire_date: NaiveDate = q
-                        .get::<Option<String>, &str>("expire_date")
+                        .get::<Option<NaiveDate>, &str>("expire_date")
                         .flatten()
-                        .map(parse_date)
                         .unwrap_or_else(|| {
                             effective_date.checked_add_days(chrono::Days::new(365)).unwrap_or(effective_date)
                         });
@@ -131,6 +135,9 @@ impl PolicyService {
                     .await
                     .map_err(db_error)?;
 
+                    // 先取 INSERT 自增 id 再做 UPDATE：last_insert_id 读最近一次
+                    // OK 包，UPDATE 会把 insert_id 归零，晚取会拿到 0 导致回读落空。
+                    let pid = tx.last_insert_id().unwrap_or_default() as i64;
                     tx.exec_drop(
                         "UPDATE orders SET status = ? WHERE id = ? AND user_id = ?",
                         vec![
@@ -142,7 +149,6 @@ impl PolicyService {
                     .await
                     .map_err(db_error)?;
 
-                    let pid = tx.last_insert_id().unwrap_or_default() as i64;
                     tx.exec_first("SELECT * FROM policies WHERE id = ? LIMIT 1", vec![pid])
                         .await
                         .map_err(db_error)
@@ -180,6 +186,178 @@ impl PolicyService {
             .map_err(db_error)?;
         Ok(rows.iter().map(|r| row_to_policy(r)).collect::<Result<Vec<_>>>()?)
     }
+
+    /// 续保：校验原保单归属本人、is_renewable=1 且状态可续（ACTIVE 在保 / EXPIRED 已满期）
+    /// 后，生成一条 issue_type=RENEW 的新保单：
+    /// - 保障起期：原单仍在保 → 原止期次日无缝接续；原单止期已过 → 从今天起保；
+    /// - 保障止期：起期 + term_months 个月（对齐原单缴费期）；
+    /// - 初始状态 ACTIVE（与 issue() 新单一致），is_renewable 继承原单。
+    ///
+    /// 简化说明（续保不新建订单/报价）：order_id/quote_id 沿用原单以满足外键约束，
+    /// 保额/保费沿用原单数值；若需按新报价续保，应上层先走报价-下单-支付再签发。
+    pub async fn renew(&self, user_id: i64, policy_id: i64) -> Result<Policy> {
+        let new_id: i64 = self
+            .db
+            .with_tx(|tx| {
+                Box::pin(async move {
+                    // 1) 取原保单并校验归属
+                    let row: Option<Row> = tx
+                        .exec_first(
+                            "SELECT * FROM policies WHERE id = ? AND deleted_at IS NULL LIMIT 1",
+                            vec![policy_id],
+                        )
+                        .await
+                        .map_err(db_error)?;
+                    let old = match row {
+                        Some(r) => row_to_policy(&r)?,
+                        None => return Err(AppError::business("保单不存在")),
+                    };
+                    if old.user_id != user_id {
+                        return Err(AppError::Forbidden);
+                    }
+
+                    // 2) 可续校验：开放续保标记 + 状态在保或已满期
+                    if !old.is_renewable {
+                        return Err(AppError::business("该保单不支持续保"));
+                    }
+                    let can_renew = old.status == Policy::STATUS_ACTIVE
+                        || old.status == Policy::STATUS_EXPIRED;
+                    if !can_renew {
+                        return Err(AppError::state_conflict("当前保单状态不可续保"));
+                    }
+
+                    // 3) 新保障期：原止期次日与今天取较晚者（无缝接续 / 过期从今天起）
+                    let today = Utc::now().date_naive();
+                    let effective = old
+                        .expire_date
+                        .checked_add_days(chrono::Days::new(1))
+                        .unwrap_or(old.expire_date)
+                        .max(today);
+                    let expire = add_months(effective, old.term_months);
+
+                    // 4) 生成续保保单行
+                    let policy_no = Self::policy_no();
+                    let now = Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
+                    let ed = effective.format("%Y-%m-%d").to_string();
+                    let xd = expire.format("%Y-%m-%d").to_string();
+                    tx.exec_drop(
+                        "INSERT INTO policies (policy_no, order_id, quote_id, user_id, holder_id, \
+                         product_id, product_name, holder_name, insurance_amount, term_months, \
+                         premium, effective_date, expire_date, status, issue_type, is_renewable, \
+                         premium_detail, issued_at, created_at, updated_at) \
+                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                        vec![
+                            Value::from(&policy_no),
+                            Value::from(old.order_id),
+                            Value::from(old.quote_id),
+                            Value::from(user_id),
+                            value_opt_int(old.holder_id),
+                            Value::from(old.product_id),
+                            Value::from(&old.product_name),
+                            Value::from(&old.holder_name),
+                            Value::from(old.insurance_amount.to_string()),
+                            Value::from(old.term_months),
+                            Value::from(old.premium.to_string()),
+                            Value::from(&ed),
+                            Value::from(&xd),
+                            Value::from(Policy::STATUS_ACTIVE.to_string()),
+                            Value::from(ISSUE_TYPE_RENEW),
+                            Value::from(old.is_renewable),
+                            json_val(old.premium_detail),
+                            Value::from(&now),
+                            Value::from(&now),
+                            Value::from(&now),
+                        ],
+                    )
+                    .await
+                    .map_err(db_error)?;
+
+                    Ok(tx.last_insert_id().unwrap_or_default() as i64)
+                })
+            })
+            .await?;
+
+        self.by_id(new_id).await
+    }
+
+    /// 退保：校验原保单归属本人且状态为 ACTIVE（在保）后，置为 SURRENDERED（退保）。
+    ///
+    /// - 状态机中 LAPSED 为未缴保费等致保单失效的另一终态，用户主动退保走 SURRENDERED；
+    /// - policies 无原因列，退保原因（含前后状态快照）写入 audit_logs（action=POLICY_LAPSE）；
+    /// - 已退保/已失效/未生效等非在保状态一律拒绝（重复退保在此被拦）。
+    pub async fn lapse(
+        &self,
+        user_id: i64,
+        policy_id: i64,
+        reason: Option<String>,
+    ) -> Result<Policy> {
+        let row: Option<Row> = self
+            .db
+            .with_tx(|tx| {
+                Box::pin(async move {
+                    // 1) 取原保单并校验归属
+                    let cur: Option<Row> = tx
+                        .exec_first(
+                            "SELECT * FROM policies WHERE id = ? AND deleted_at IS NULL LIMIT 1",
+                            vec![policy_id],
+                        )
+                        .await
+                        .map_err(db_error)?;
+                    let old = match cur {
+                        Some(r) => row_to_policy(&r)?,
+                        None => return Err(AppError::business("保单不存在")),
+                    };
+                    if old.user_id != user_id {
+                        return Err(AppError::Forbidden);
+                    }
+                    if old.status != Policy::STATUS_ACTIVE {
+                        return Err(AppError::state_conflict("当前保单状态不可退保(仅 ACTIVE 在保可退)"));
+                    }
+
+                    // 2) 状态流转 ACTIVE → SURRENDERED
+                    tx.exec_drop(
+                        "UPDATE policies SET status = ?, updated_at = NOW() WHERE id = ?",
+                        vec![
+                            Value::from(Policy::STATUS_SURRENDERED.to_string()),
+                            Value::from(policy_id),
+                        ],
+                    )
+                    .await
+                    .map_err(db_error)?;
+
+                    // 3) 退保原因入审计日志（policies 无原因列）
+                    let before = json_val(Some(serde_json::json!({ "status": old.status })));
+                    let after = json_val(Some(serde_json::json!({
+                        "status": Policy::STATUS_SURRENDERED,
+                        "reason": reason,
+                    })));
+                    tx.exec_drop(
+                        "INSERT INTO audit_logs (user_id, action, entity_type, entity_id, \
+                         before_json, after_json) VALUES (?, ?, ?, ?, ?, ?)",
+                        vec![
+                            Value::from(user_id),
+                            Value::from(POLICY_ACTION_LAPSE),
+                            Value::from("POLICY"),
+                            Value::from(policy_id),
+                            before,
+                            after,
+                        ],
+                    )
+                    .await
+                    .map_err(db_error)?;
+
+                    // 4) 事务内回读
+                    tx.exec_first("SELECT * FROM policies WHERE id = ? LIMIT 1", vec![policy_id])
+                        .await
+                        .map_err(db_error)
+                })
+            })
+            .await?;
+
+        row.map(|r| row_to_policy(&r))
+            .transpose()?
+            .ok_or_else(|| AppError::business("退保后回读失败"))
+    }
 }
 
 // ---------- helpers ----------
@@ -206,8 +384,19 @@ fn value_opt_int(v: Option<i64>) -> Value {
     v.map(Value::from).unwrap_or(Value::NULL)
 }
 
+/// 日期加整月：跨年进位，目标月天数不足时钳制到月末（如 1/31 + 1 月 → 2/28/29）。
+fn add_months(d: NaiveDate, months: i32) -> NaiveDate {
+    let months0 = d.year() * 12 + d.month0() as i32 + months;
+    let (y, m0) = (months0.div_euclid(12), months0.rem_euclid(12) as u32);
+    let last = if m0 == 1 && (y % 4 == 0 && (y % 100 != 0 || y % 400 == 0)) {
+        29
+    } else {
+        [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][m0 as usize]
+    };
+    NaiveDate::from_ymd_opt(y, m0 + 1, d.day().min(last)).expect("月份日期恒合法")
+}
+
 fn row_to_policy(row: &Row) -> Result<Policy> {
-    let parse_date = |s: String| NaiveDate::parse_from_str(&s, "%Y-%m-%d").unwrap_or_default();
     Ok(Policy {
         id: row.get("id").unwrap_or_default(),
         policy_no: row.get("policy_no").unwrap_or_default(),
@@ -222,8 +411,8 @@ fn row_to_policy(row: &Row) -> Result<Policy> {
         insurance_amount: dec_opt_row(row, "insurance_amount").unwrap_or_default(),
         premium: dec_opt_row(row, "premium").unwrap_or_default(),
         term_months: row.get("term_months").unwrap_or_default(),
-        effective_date: row.get::<Option<String>, &str>("effective_date").flatten().map(parse_date).unwrap_or_default(),
-        expire_date: row.get::<Option<String>, &str>("expire_date").flatten().map(parse_date).unwrap_or_default(),
+        effective_date: row.get::<Option<NaiveDate>, &str>("effective_date").flatten().unwrap_or_default(),
+        expire_date: row.get::<Option<NaiveDate>, &str>("expire_date").flatten().unwrap_or_default(),
         status: row.get("status").unwrap_or_default(),
         issue_type: row.get("issue_type").unwrap_or_default(),
         is_renewable: row.get("is_renewable").unwrap_or_default(),

@@ -18,6 +18,8 @@ use crate::db::{db_error, Db};
 use crate::error::{AppError, Result};
 use crate::middleware::auth::{JwtService, Role};
 use crate::models::user::User;
+use crate::providers::wechat::WechatClient;
+use crate::utils::validator::check_phone;
 
 /// 注册请求
 #[derive(Debug, Deserialize)]
@@ -50,6 +52,21 @@ pub struct RefreshReq {
     pub refresh_token: String,
 }
 
+/// 修改密码请求
+#[derive(Debug, Deserialize)]
+pub struct ChangePasswordReq {
+    pub old_password: String,
+    pub new_password: String,
+}
+
+/// 换绑手机请求
+#[derive(Debug, Deserialize)]
+pub struct BindPhoneReq {
+    /// 登录密码校验（安全操作需验明正身）
+    pub password: String,
+    pub new_phone: String,
+}
+
 /// 令牌对（Access + Refresh）
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TokenPair {
@@ -73,14 +90,17 @@ pub struct AuthService {
     jwt: JwtService,
     crypto: CryptoService,
     db: Db,
+    /// 微信 code2session 客户端（任务 B：配置化注入，凭据齐全即激活）
+    wechat: WechatClient,
 }
 
 impl AuthService {
-    pub fn new(jwt_cfg: JwtConfig, crypto: CryptoService, db: Db) -> Self {
+    pub fn new(jwt_cfg: JwtConfig, crypto: CryptoService, db: Db, wechat: WechatClient) -> Self {
         Self {
             jwt: JwtService::new(jwt_cfg),
             crypto,
             db,
+            wechat,
         }
     }
 
@@ -184,9 +204,16 @@ impl AuthService {
         self.issue_tokens(user.id, &user.username, role)
     }
 
-    /// 微信登录 stub（阶段 3 实现 code2session）
-    pub async fn wechat_login(&self, _req: WechatLoginReq) -> Result<LoginResult> {
-        Err(AppError::business("微信登录未接入（阶段 3 code2session 实现）"))
+    /// 微信登录：code2session 已就位（任务 B）。未配置 WECHAT_APPID/SECRET →
+    /// code2session 返回「未配置」业务错误（天然降级，不发网络请求）；凭据注入后
+    /// 此处会真实校验 code。成功换取 openid 后仍需用户绑定（users 无 openid 列，
+    /// 属阶段 3 产品功能，需 schema 迁移），先以业务错误如实说明边界。
+    pub async fn wechat_login(&self, req: WechatLoginReq) -> Result<LoginResult> {
+        let session = self.wechat.code2session(&req.code).await?;
+        Err(AppError::business(format!(
+            "微信 code2session 已通过（openid={}），用户绑定待阶段 3 接入（需 users.openid 列）",
+            session.openid
+        )))
     }
 
     /// 令牌刷新：校验 refresh_token（与 access 同型 JWT，签名/过期/issuer 由
@@ -207,6 +234,74 @@ impl AuthService {
         }
         let role = Role::from_str(&user.role).unwrap_or(Role::User);
         self.issue_tokens(user.id, &user.username, role)
+    }
+
+    /// 修改密码：旧密码校验通过后，以新哈希覆盖 password_hash。
+    pub async fn change_password(
+        &self,
+        user_id: i64,
+        old_password: &str,
+        new_password: &str,
+    ) -> Result<()> {
+        // 1. 取当前用户（不存在/已软删 → NotFound）
+        let user: Option<User> = self
+            .db
+            .query_one(
+                "SELECT * FROM users WHERE id = ? AND deleted_at IS NULL LIMIT 1",
+                vec![user_id],
+            )
+            .await?;
+        let user = user.ok_or(AppError::NotFound)?;
+        // 2. 旧密码校验（不通过 → 业务错误，不泄露哈希细节）
+        if !Self::verify_password(old_password, &user.password_hash) {
+            return Err(AppError::business("旧密码错误"));
+        }
+        // 3. 落库新哈希（单行 UPDATE，原子完成）
+        let new_hash = Self::hash_password(new_password)?;
+        let params: Vec<Value> = vec![new_hash.into(), user_id.into()];
+        self.db
+            .exec_drop(
+                "UPDATE users SET password_hash = ?, updated_at = NOW() WHERE id = ?",
+                params,
+            )
+            .await?;
+        Ok(())
+    }
+
+    /// 换绑手机：登录密码校验通过后，重加密 + 重脱敏覆盖 phone_enc / phone_masked。
+    pub async fn bind_phone(
+        &self,
+        user_id: i64,
+        password: &str,
+        new_phone: &str,
+    ) -> Result<()> {
+        // 0. 手机号格式校验（大陆手机号 11 位）
+        check_phone(new_phone)?;
+        // 1. 取当前用户（不存在/已软删 → NotFound）
+        let user: Option<User> = self
+            .db
+            .query_one(
+                "SELECT * FROM users WHERE id = ? AND deleted_at IS NULL LIMIT 1",
+                vec![user_id],
+            )
+            .await?;
+        let user = user.ok_or(AppError::NotFound)?;
+        // 2. 登录密码校验（换绑属敏感操作，需验明正身）
+        if !Self::verify_password(password, &user.password_hash) {
+            return Err(AppError::business("密码错误"));
+        }
+        // 3. 新手机号 AES 加密 + 脱敏，单行 UPDATE 覆盖（与 register 落库格式一致）
+        let phone_enc = self.crypto.encrypt_str(new_phone)?;
+        let phone_masked = crate::crypto::Masker::phone(new_phone);
+        let params: Vec<Value> = vec![phone_enc.into(), phone_masked.into(), user_id.into()];
+        self.db
+            .exec_drop(
+                "UPDATE users SET phone_enc = ?, phone_masked = ?, updated_at = NOW() \
+                 WHERE id = ?",
+                params,
+            )
+            .await?;
+        Ok(())
     }
 
     /// 当前用户资料（user/me）：按 id 查未删除用户，不存在 → NotFound。
@@ -242,6 +337,11 @@ impl AuthService {
 }
 
 /// 便捷工厂（供控制器注入）
-pub fn auth_service(cfg: JwtConfig, crypto: CryptoService, db: Db) -> AuthService {
-    AuthService::new(cfg, crypto, db)
+pub fn auth_service(
+    cfg: JwtConfig,
+    crypto: CryptoService,
+    db: Db,
+    wechat: WechatClient,
+) -> AuthService {
+    AuthService::new(cfg, crypto, db, wechat)
 }

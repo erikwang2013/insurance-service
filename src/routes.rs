@@ -225,6 +225,18 @@ pub fn route_table() -> Vec<Route> {
             handler: "user.me",
             auth: Authenticated,
         },
+        Route {
+            method: Post,
+            path: "/api/v1/user/password",
+            handler: "user.change_password",
+            auth: Authenticated,
+        },
+        Route {
+            method: Post,
+            path: "/api/v1/user/phone",
+            handler: "user.bind_phone",
+            auth: Authenticated,
+        },
         // admin（需 ADMIN/OPERATOR）
         Route {
             method: Post,
@@ -236,6 +248,12 @@ pub fn route_table() -> Vec<Route> {
             method: Post,
             path: "/api/v1/admin/products/{id}/status",
             handler: "admin.product_status",
+            auth: AdminOrOperator,
+        },
+        Route {
+            method: Post,
+            path: "/api/v1/admin/stats",
+            handler: "admin.stats",
             auth: AdminOrOperator,
         },
     ]
@@ -281,11 +299,13 @@ pub async fn favicon_svg() -> impl axum::response::IntoResponse {
     )
 }
 
+use axum::extract::State;
+use axum::response::IntoResponse;
 use bee_rust::bee_router::Router;
 
 use crate::controllers::{
     admin_handler, AppState, auth_handler, claim_handler, contract_handler, order_handler,
-    payment_handler, policy_handler, product_handler, quote_handler, search_handler,
+    payment_handler, policy_handler, product_handler, quote_handler, search_handler, stats_handler,
 };
 
 /// 对接 bee_router 的路由注册（bee-rust 已激活，见 Cargo.toml [workspace.dependencies] 注释）
@@ -304,6 +324,8 @@ pub fn build_bee_router(state: AppState) -> axum::Router {
                 .post("/auth/refresh", auth_handler)
                 .post("/auth/logout", auth_handler)
                 .get("/user/me", auth_handler)
+                .post("/user/password", auth_handler)
+                .post("/user/phone", auth_handler)
                 // products（公开）
                 .get("/products", product_handler)
                 .get("/products/{id}", product_handler)
@@ -338,8 +360,15 @@ pub fn build_bee_router(state: AppState) -> axum::Router {
                 // admin（运营后台：商品建档 / 上下架）
                 .post("/admin/products", admin_handler)
                 .post("/admin/products/{id}/status", admin_handler)
+                // admin/stats（运营统计，OPERATOR/ADMIN）
+                .post("/admin/stats", stats_handler)
         })
         .build();
+    // 限流挂载：仅覆盖业务路由（/healthz、/favicon.svg 不受限）
+    let router = router.layer(axum::middleware::from_fn_with_state(
+        state.clone(),
+        rate_limit_mw,
+    ));
     // 吉祥物 favicon + 健康检查：根路径（浏览器 / 前端直接引用）
     axum::Router::<AppState>::new()
         .route("/healthz", axum::routing::get(healthz_handler))
@@ -351,4 +380,28 @@ pub fn build_bee_router(state: AppState) -> axum::Router {
 /// /healthz axum 处理器，返回统一 ResponseEnvelope。
 async fn healthz_handler() -> axum::Json<crate::response::ResponseEnvelope<serde_json::Value>> {
     axum::Json(crate::response::ResponseEnvelope::ok(healthz()))
+}
+
+/// 限流中间件：key 取 `X-Forwarded-For`（缺失回退全局单桶），
+/// 超过 AppState.rate_limiter 窗口上限 → HTTP 429 + 统一信封（业务码 42900）。
+async fn rate_limit_mw(
+    State(state): State<AppState>,
+    req: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> axum::response::Response {
+    let key = req
+        .headers()
+        .get("x-forwarded-for")
+        .and_then(|v| v.to_str().ok())
+        .map(str::to_string)
+        .unwrap_or_else(|| "global".to_string());
+    if state.rate_limiter.allow(&key) {
+        next.run(req).await
+    } else {
+        let envelope: crate::response::ApiResponse =
+            crate::response::ResponseEnvelope::err(42900, "请求过于频繁，请稍后再试");
+        let mut resp = axum::Json(envelope).into_response();
+        *resp.status_mut() = axum::http::StatusCode::TOO_MANY_REQUESTS;
+        resp
+    }
 }

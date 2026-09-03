@@ -10,6 +10,7 @@
 //! 可拉取后，通过 `bee_router` 适配器把本地 `Filter` 接入 bee 过滤器链即可复用全部逻辑。
 
 pub mod auth;
+pub mod rate_limit;
 pub mod security;
 pub mod trace;
 

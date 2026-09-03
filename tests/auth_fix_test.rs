@@ -17,7 +17,7 @@ use insurance_service::services::auth_service::{AuthService, LoginResult, Regist
 /// 构造 AuthService（测试固定密钥/配置 + 测试库连接）
 async fn service() -> Option<AuthService> {
     let db = common::test_db().await?;
-    Some(AuthService::new(common::jwt_cfg(3600), common::crypto(), db))
+    Some(AuthService::new(common::jwt_cfg(3600), common::crypto(), db, common::wechat_client()))
 }
 
 /// 独立连接池（用于行更新/清理，共享同一测试库）
