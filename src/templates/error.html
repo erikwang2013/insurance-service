@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+
+{% block title %}{{ status }} · {{ title }}{% endblock %}
+
+{% block content %}
+  <h1>{{ status }} · {{ title }}</h1>
+  <p>{{ detail }}</p>
+  <p class="trace">trace_id: <code>{{ trace_id }}</code></p>
+  <div class="links">
+    <a href="/">返回首页</a>
+  </div>
+{% endblock %}

@@ -181,6 +181,9 @@ request(options)
 50000        SERVER       服务端错误（展示 trace_id 便于客服定位）
 ```
 
+> **响应形态边界（v1.8.0）**：`/api/v1/*` 恒返回上述 JSON 信封，不受 `Accept` 请求头影响；
+> HTML 面仅存在于非 API 路径（`GET /` 落地页、浏览器访问未匹配路径时的错误页），与端上调用无关。
+
 ### 1.6 tabBar 与导航设计
 
 `app.json` 配置 tabBar（3~4 个主入口，微信 tabBar 上限 5）：

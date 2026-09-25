@@ -1,6 +1,6 @@
 # 保险服务平台 — 后端 bee-rust 架构规划
 
-> 版本: v1.0 → v1.7 | 日期: 2026-09-01（v1.6/v1.7 实现事实已同步标注）| 状态: 规划蓝图（对照实现核对版）
+> 版本: v1.0 → v1.8 | 日期: 2026-09-26（v1.6/v1.7/v1.8 实现事实已同步标注）| 状态: 规划蓝图（对照实现核对版）
 > 框架: `bee-rust`（Beerust，Rust Web 框架，对标 Go Beego）— git 依赖 `features=["full"]`
 > 搜索: OpenSearch（`bee_search`）+ rust-scout（业务层门面）
 > 数据库: MySQL 8（`bee_orm` feature `mysql`）；缓存/会话: Redis（`bee_kv`/`bee_session`）
@@ -89,6 +89,8 @@ insurance-service/
 │   ├── routes.rs                 # 路由注册总表
 │   ├── error.rs                  # 统一错误枚举 + thiserror
 │   ├── response.rs               # ResponseEnvelope + 成功/失败构造
+│   ├── pages.rs                  # 浏览器 HTML 面：落地页 + 错误页（Accept 协商）
+│   ├── templates/                # Tera 模板：base.html / landing.html / error.html
 │   ├── middleware/
 │   │   ├── mod.rs
 │   │   ├── security.rs           # SecurityFilter 装配（security-rust 27 检测器）
@@ -248,6 +250,8 @@ reqwest = { workspace = true }
 
 RESTful 命名空间 `/api/v1`。三端（Flutter/小程序/鸿蒙）共用同一路由，通过 `X-Client-Platform` 头区分（auth 登录、payment 支付两处按平台分流）。
 
+> **API 版本约定**：版本一律走 `/api/v1` 路径前缀，禁止使用自定义版本 header（如 `Accept-Version` / `X-Api-Version`）。路由表中出现新版本时新增前缀（如 `/api/v2`），不得复用同一路径靠 header 区分。`X-Client-Version` 属客户端 App 版本（灰度/强更用），与 API 版本无关。
+
 | 命名空间 | 方法 | 路径 | 控制器动作 | 鉴权 |
 |---------|------|------|-----------|------|
 | auth | POST | `/api/v1/auth/register` | 注册 | 公开 |
@@ -284,7 +288,16 @@ RESTful 命名空间 `/api/v1`。三端（Flutter/小程序/鸿蒙）共用同�
 | admin | * | `/api/v1/admin/**` | 管理端（产品上架/审核） | 需 ADMIN/OPERATOR |
 | admin | GET | `/api/v1/admin/audit-logs` | 审计日志（OPERATOR/ADMIN 过滤分页，v1.6.0） | 需 ADMIN/OPERATOR |
 
-> **实现核对**：本表为规划蓝图；现网实现以 `src/routes.rs` 的 `route_table()` 为准（共 39 个业务端点）。v1.6.0 新增 `auth/wechat/bind`、`policies/{id}/beneficiaries`、`claims/{id}/documents`、`admin/audit-logs` 已并入上表。费率计算（v1.6.0）：`quote_rates` 命中 → premium = 保额 × rate；未命中或费率表缺失（ERRNO 1146）→ 回退使用请求保费。
+**根路径（不在 `/api/v1` 下；浏览器 HTML 面 + 运维探针，v1.8.0）**：
+
+| 方法 | 路径 | 动作 | 返回 |
+|------|------|------|------|
+| GET | `/` | 落地页（内联吉祥物安安） | HTML |
+| GET | `/healthz` | 健康检查 | JSON 信封（`data.mascot` 含吉祥物标识） |
+| GET | `/favicon.svg` | 吉祥物 SVG | `image/svg+xml` |
+| * | 未匹配路径 | 404 兜底 | 浏览器 → HTML 错误页；其余 → JSON `40400` |
+
+> **实现核对**：本表为规划蓝图；现网实现以 `src/routes.rs` 的 `route_table()` 为准（共 39 个业务端点 + 上述根路径）。v1.6.0 新增 `auth/wechat/bind`、`policies/{id}/beneficiaries`、`claims/{id}/documents`、`admin/audit-logs` 已并入上表。费率计算（v1.6.0）：`quote_rates` 命中 → premium = 保额 × rate；未命中或费率表缺失（ERRNO 1146）→ 回退使用请求保费。v1.8.0 新增根路径 HTML 面（见 §6.4）。
 
 ### 路由注册示例（bee_router 风格）
 
@@ -495,6 +508,24 @@ pub enum AppError {
 | Db/Internal | 500 | 50000 |
 
 > 所有错误经统一 handler 转为 `ResponseEnvelope`，Controller 只 `return Err(...)`，由框架层兜底序列化。
+
+### 6.4 浏览器 HTML 面（Accept 协商，v1.8.0）
+
+除 `/api/v1/*` 的 JSON 接口外，服务对**非 API 路径**额外提供一层 HTML 面，供浏览器人工访问与排障：
+
+| 路径 | 行为 |
+|------|------|
+| `GET /` | 落地页（`pages::landing`，模板 `landing.html`，内联吉祥物） |
+| 未匹配路径 | `pages::not_found` 兜底：`Accept` 含 `text/html` → 吉祥物错误页；否则 JSON 信封 `40400` |
+
+**边界（关键）**：`/api/v1/*` 下**永远**返回 JSON 信封，即便请求头声明 `Accept: text/html` 也不改写——
+三端 App 与中间代理可能透传浏览器式 `Accept`，API 契约面不应因请求头而改变。该判定收敛在
+`pages::not_found_response()` 一处（`path.starts_with("/api/v1")` 短路），并由单测
+`api_prefix_stays_json_even_for_browsers` 锁定。
+
+渲染走 `bee_template::TemplateEngine`（Tera）：`.html` 插值**自动转义**，错误页回显请求路径不构成
+反射型 XSS（单测 `error_page_escapes_request_path` 锁定）。模板渲染失败时降级为纯文本状态行，
+不把渲染故障伪装成其它错误码。
 
 ---
 
@@ -1050,23 +1081,23 @@ master_key = "${CRYPTO_MASTER_KEY}"
 
 ## 13. 分阶段实现 Roadmap
 
-### 阶段 0 — 后端骨架（先行）
-- [ ] Cargo workspace + bee-rust git 依赖 + 配置加载（bee_config）
-- [ ] `install.sql`（取自 db-schema.md §4）+ bee_orm Model 结构体（§6 蓝本）
-- [ ] MySQL 连接（bee_orm mysql feature）、Redis（bee_kv）
-- [ ] OpenSearch 连接（bee_search opensearch feature）+ rust-scout 封装
-- [ ] SecurityFilter + JWT 认证 + RBAC + 统一 ResponseEnvelope
-- [ ] 基础控制器（auth / user / product / search）+ 健康检查 `/healthz`
-- [ ] CryptoService（AES-256-GCM + 脱敏）
-- [ ] SyncWorker 骨架 + search_sync_logs 消费
+### 阶段 0 — 后端骨架（先行）· v1.8.0 实现状态
+- [x] Cargo workspace + bee-rust 依赖 + 配置加载（`config.rs`：环境变量 + `config/app.toml`）
+- [x] `install.sql` + bee_orm Model 结构体（19 表，见 db-schema.md）
+- [x] MySQL 连接（`db.rs` mysql_async 连接池 + 事务）；Redis 仍为内存缓存暂代（`bee_cache::MemoryCache`）
+- [ ] OpenSearch 连接 + rust-scout 封装（当前降级 MySQL LIKE；`search_sync_logs` + SyncWorker 已就绪，待接入索引）
+- [x] SecurityFilter + JWT 认证 + RBAC + 统一 ResponseEnvelope
+- [x] 基础控制器（auth / user / product / search）+ 健康检查 `/healthz`
+- [x] CryptoService（AES-256-GCM + 脱敏）
+- [x] SyncWorker 骨架 + search_sync_logs 消费
 
-### 阶段 1 — 核心交易闭环
-- [ ] 产品管理 + 分类 + 条款（含搜索索引同步）
-- [ ] 报价（QuoteService + 保费计算 PricingService）
-- [ ] 订单 + 支付（PayProvider 接口 + Mock，支付回调幂等）
-- [ ] 保单生成（PolicyService：保单号、PDF、受益人）
-- [ ] 电子合同 + 签署（ElectronicSignature 接口 + Mock）
-- [ ] 理赔基础流程
+### 阶段 1 — 核心交易闭环 · v1.8.0 实现状态
+- [x] 产品管理 + 分类 + 条款（索引同步仍走降级路径）
+- [x] 报价（QuoteService + `quote_rates` 费率表驱动；未命中回退请求保费）
+- [x] 订单 + 支付（PayProvider 接口 + Mock，支付回调幂等）
+- [ ] 保单生成 —— 保单号 / 受益人批改已实现；**保险单 PDF 未实现**（仅 `policies.pdf_path` 字段预留）
+- [x] 电子合同 + 签署（ElectronicSignature 接口 + Mock）
+- [x] 理赔基础流程（报案 / 审核 / 资料上传）
 
 ### 阶段 2 — Flutter 主端对接
 - [ ] 三端共用 REST API 联调（auth → 报价 → 订单 → 支付 → 保单 → 签署）

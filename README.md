@@ -6,11 +6,14 @@
 当前迭代处于 **阶段 0 → 1**：已落地**用户认证、保险商品、全文搜索、报价、理赔（含审核）**业务能力，并打通
 **报价 → 订单 → 支付 → 保单 → 签约**交易闭环 API（支付 / 电子签当前为 Mock 渠道），并已提供**运营后台商品建档与上下架**接口。
 
+除 `/api/v1/*` 的 JSON 接口外，另提供一层**面向浏览器人工访问的 HTML 面**：`GET /` 落地页与吉祥物主题错误页。
+`/api/v1/*` 下**始终**返回统一 JSON 信封——即便请求头声明 `Accept: text/html` 也不改写，保证三端 App 契约稳定。
+
 | 项目 | 值 |
 |------|-----|
 | 语言 / 版本 | Rust 2024 edition（rust-version ≥ 1.87） |
 | 许可证 | Apache-2.0 |
-| 版本 | 1.7.0 |
+| 版本 | 1.8.0 |
 | HTTP 框架 | axum 0.8 + bee_rust（bee_router / bee_orm / 过滤器管线） |
 | 存储 | MySQL 8.4（业务库，表主键由应用层 idgen_rs snowflake 生成）· Redis / 内存缓存（会话）· OpenSearch（搜索，可选） |
 
@@ -72,52 +75,86 @@ insurance-service/
 │   ├── app.toml               # 应用配置模板（server / database / redis / opensearch / jwt / crypto / log）
 │   └── bee.toml               # bee_rust 管线配置
 ├── docs/                      # 文档与架构图
+│   ├── mascot.svg             # 吉祥物安安（守护熊猫，同步内嵌至 /favicon.svg）
 │   ├── architecture.svg       # 系统架构图
 │   ├── features.svg           # 功能总览图
 │   ├── lifecycle.svg          # 请求生命周期图
 │   ├── backend-architecture.md
-│   └── db-schema.md
+│   ├── db-schema.md
+│   └── design.md / plan.md / tasks.md / flutter-app.md / miniprogram-harmony.md
 ├── src/
 │   ├── main.rs                # 启动入口：init → 配置 → AppState → 路由 → serve
 │   ├── lib.rs                 # 库入口（集成测试依赖）
 │   ├── config.rs              # AppConfig：从环境变量 + config/app.toml 加载
-│   ├── routes.rs              # 数据驱动路由表（39 个业务端点）+ 已挂载 handler
+│   ├── routes.rs              # 数据驱动路由表（39 个业务端点）+ 已挂载 handler + 吉祥物
 │   ├── db.rs                  # mysql_async 连接池与查询 / 事务封装
 │   ├── error.rs               # AppError（BadRequest / Unauthorized / NotFound / Business…）
-│   ├── controllers/mod.rs     # AppState · bee 管线 run() · 统一信封
-│   ├── middleware/mod.rs      # Filter trait · RequestCtx · trace_id
-│   ├── middleware/auth.rs     # JwtService · AuthFilter · RequireRoleFilter
-│   ├── middleware/security.rs # SecurityFilter
+│   ├── response.rs            # 统一响应信封 ResponseEnvelope（{code, message, data}）
+│   ├── pages.rs               # 浏览器 HTML 面：落地页 + 错误页（Accept 协商 HTML/JSON）
+│   ├── templates/             # Tera 模板（渲染走 bee_template::TemplateEngine）
+│   │   ├── base.html          #   页面外壳（内联吉祥物 + 样式）
+│   │   ├── landing.html       #   GET / 落地页
+│   │   └── error.html         #   错误页（回显请求路径，自动转义防 XSS）
+│   ├── controllers/           # 各业务 Controller（经 AppState 注入）
+│   │   ├── mod.rs             #   AppState · bee 管线 run() · 统一信封
+│   │   ├── auth.rs            #   认证 / 用户中心
+│   │   ├── product.rs         #   商品 / 条款 / 精选
+│   │   ├── search.rs          #   全文搜索
+│   │   ├── quote.rs           #   报价
+│   │   ├── order.rs           #   订单
+│   │   ├── payment.rs         #   支付（预下单 / 回调）
+│   │   ├── policy.rs          #   保单 / 受益人批改
+│   │   ├── contract.rs        #   电子合同
+│   │   ├── claim.rs           #   理赔（报案 / 审核 / 资料）
+│   │   ├── admin.rs           #   运营后台（商品建档 / 上下架 / 审计查询）
+│   │   └── stats.rs           #   运营统计
+│   ├── middleware/
+│   │   ├── mod.rs             # Filter trait · RequestCtx
+│   │   ├── auth.rs            # JwtService · AuthFilter · RequireRoleFilter
+│   │   ├── security.rs        # SecurityFilter（入站安全扫描）
+│   │   ├── rate_limit.rs      # 固定窗口限流器
+│   │   └── trace.rs           # trace_id 生成 / 透传 + 请求日志
 │   ├── services/
 │   │   ├── mod.rs
-│   │   ├── auth_service.rs    # 注册 / 登录 / 单点签发
+│   │   ├── auth_service.rs    # 注册 / 登录 / 微信绑定 / 令牌吊销
 │   │   ├── product_service.rs # 商品列表 / 详情 / 精选
 │   │   ├── search_service.rs  # 搜索（LIKE 降级）
-│   │   ├── quote_service.rs   # 报价
+│   │   ├── quote_service.rs   # 报价（费率表驱动）
 │   │   ├── order_service.rs   # 订单
 │   │   ├── payment_service.rs # 支付（预下单 / 回调）
-│   │   ├── policy_service.rs  # 保单
-│   │   ├── contract_service.rs# 电子合同（Mock 签署）
-│   │   └── claim_service.rs   # 理赔（报案 / 我的理赔）
+│   │   ├── policy_service.rs  # 保单（续保 / 退保 / 批改）
+│   │   ├── contract_service.rs # 电子合同（Mock 签署）
+│   │   ├── claim_service.rs   # 理赔（报案 / 审核 / 资料）
+│   │   └── stats_service.rs   # 运营统计汇总
 │   ├── models/                # bee_orm Model（user / insurance_product / order / payment / policy / contract / claim…）
 │   ├── crypto/                # AES-256-GCM · Masker · argon2
-│   ├── providers/             # payment（wechat · mock）· esign（escqian · mock）
+│   ├── providers/             # payment（wechat · mock）· esign（escqian · mock）· wechat（code2session）
 │   ├── search/                # searchable_impl · sync_worker
-│   └── utils/                 # validator · id_generator
+│   └── utils/                 # validator · id_generator · idgen（snowflake）
 └── tests/
-    ├── common/mod.rs           # 测试共享设施（测试库连接 / JWT 配置 / 唯一值 / 清理）
-    ├── auth_service_test.rs    # 注册 / 登录 / 微信 stub（6 项）
-    ├── product_service_test.rs # 商品增删改查 / 过滤 / 软删（5 项）
-    ├── search_service_test.rs  # 搜索命中 / 无果 / 分页 / 索引路由（4 项）
-    ├── quote_service_test.rs   # 报价试算 / 详情 / 鉴权（3 项）
-    ├── security_test.rs        # JWT 校验 / 过期 / 角色 RBAC（18 项）
-    ├── api_auth_test.rs        # API 层鉴权 E2E（8 项）
-    ├── claim_service_test.rs   # 理赔报案 / 归属校验 / 分页（5 项）
-    ├── claim_review_test.rs    # 理赔审核 APPROVE / REJECT（5 项）
-    ├── admin_product_test.rs   # 商品上架 / 下架管理端（5 项）
-    ├── auth_fix_test.rs        # 认证修复回归：#10 修复项（8 项）
-    ├── product_fix_test.rs     # 产品模块修复回归：HTTP 层（4 项）
-    └── contract_fix_test.rs    # 签约修复回归：sign-url Mock 真实化（4 项）
+    ├── common/mod.rs                # 测试共享设施（测试库连接 / JWT 配置 / 唯一值 / 清理）
+    ├── auth_service_test.rs         # 注册 / 登录 / 微信 stub（6 项）
+    ├── product_service_test.rs      # 商品增删改查 / 过滤 / 软删（5 项）
+    ├── search_service_test.rs       # 搜索命中 / 无果 / 分页 / 索引路由（4 项）
+    ├── quote_service_test.rs        # 报价试算 / 详情 / 鉴权（3 项）
+    ├── security_test.rs             # JWT 校验 / 过期 / 角色 RBAC（18 项）
+    ├── api_auth_test.rs             # API 层鉴权 E2E（8 项）
+    ├── claim_service_test.rs        # 理赔报案 / 归属校验 / 分页（5 项）
+    ├── claim_review_test.rs         # 理赔审核 APPROVE / REJECT（5 项）
+    ├── admin_product_test.rs        # 商品上架 / 下架管理端（5 项）
+    ├── auth_fix_test.rs             # 认证修复回归：#10 修复项（8 项）
+    ├── product_fix_test.rs          # 产品模块修复回归：HTTP 层（4 项）
+    ├── contract_fix_test.rs         # 签约修复回归：sign-url Mock 真实化（4 项）
+    ├── trade_flow_test.rs           # 交易闭环：报价 → 下单 → 支付回调 → 保单签发（4 项）
+    ├── policy_lifecycle_test.rs     # 保单生命周期：续保 renew / 退保 lapse（9 项）
+    ├── user_center_test.rs          # 用户中心：改密 / 换绑手机（3 项）
+    ├── wechat_channel_test.rs       # 微信 code2session 渠道（2 项）
+    ├── c1_auth_extend_test.rs       # C1 认证扩展（6 项）
+    ├── c2_policy_endorse_test.rs    # C2 受益人批改（5 项）
+    ├── c3_claim_docs_test.rs        # C3 理赔资料上传 / 列表（5 项）
+    ├── c4_quote_rates_test.rs       # C4 费率表化报价（4 项）
+    ├── c5_audit_query_test.rs       # C5 运营端审计日志查询（1 项）
+    └── ops_stats_test.rs            # 运营统计 API（1 项）
 ```
 
 ## 使用说明
@@ -165,17 +202,21 @@ cargo test           # 全部测试（单元 + 集成）
 ```
 
 - 依赖 MySQL 的集成测试在未配置 `DATABASE_URL` 或未执行 `install.sql` 时会打印 `SKIP` 并跳过，
-  保证无库环境 `cargo test` 不失败（v1.7.0 全量 129 项全绿：单元 14 + 集成 115）。集成测试覆盖：
+  保证无库环境 `cargo test` 不失败（v1.8.0 全量 137 项：单元 22 + 集成 115）。集成测试覆盖：
   认证（微信绑定/未配置降级/令牌吊销）、API 鉴权 E2E、交易闭环（报价→订单→支付回调→保单签发）、
   保单生命周期（续保/退保/受益人批改）、限流、用户中心（改密/换绑）、运营统计、费率报价、
-  理赔（资料上传）、审计查询、商品、修复回归等。
+  理赔（资料上传）、审计查询、商品、修复回归等；单元测试覆盖限流窗口、加解密与脱敏、
+  身份证 / 手机号校验、snowflake 唯一性、微信响应解析、吉祥物 SVG 自检、页面渲染与 Accept 协商（均不依赖 DB）。
 - 按项目约定（CLAUDE.md）：代码变更后**先跑测试、再提交**。
 
 ### 已实现 API 概览（阶段 0 → 1）
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| GET | `/healthz` | 健康检查 |
+| GET | `/` | 落地页（HTML，内联吉祥物安安；浏览器人工访问） |
+| GET | `/healthz` | 健康检查（响应含吉祥物 `mascot` 字段） |
+| GET | `/favicon.svg` | 吉祥物安安（内嵌 SVG，免静态目录） |
+| — | 未匹配路径 | 浏览器（`Accept: text/html`）→ 吉祥物 404 页；其余 → JSON 信封 `40400` |
 | POST | `/api/v1/auth/register` | 注册（返回双令牌） |
 | POST | `/api/v1/auth/login` | 账号密码登录 |
 | POST | `/api/v1/auth/wechat/login` | 微信登录（code2session 校验，按 openid 直登；未绑定提示；未配置凭据降级报错） |
@@ -203,6 +244,7 @@ cargo test           # 全部测试（单元 + 集成）
 | POST | `/api/v1/claims/{id}/review` | 理赔审核 APPROVE / REJECT（OPERATOR / ADMIN） |
 | POST · GET | `/api/v1/claims/{id}/documents` | 理赔资料上传 / 列表（归属校验） |
 | POST | `/api/v1/admin/products` · `/api/v1/admin/products/{id}/status` | 商品建档 / 上下架（OPERATOR / ADMIN） |
+| POST | `/api/v1/admin/stats` | 运营统计汇总（OPERATOR / ADMIN） |
 | GET | `/api/v1/admin/audit-logs` | 审计日志查询（OPERATOR / ADMIN，多条件过滤 + 分页） |
 
 完整路由表（共 39 个业务端点，含 `/user/me`、`/user/password`、`/user/phone`、运营后台 `/admin/*`）

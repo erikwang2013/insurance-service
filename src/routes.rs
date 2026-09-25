@@ -400,16 +400,20 @@ pub fn build_bee_router(state: AppState) -> axum::Router {
                 .get("/admin/audit-logs", admin_handler)
         })
         .build();
-    // 限流挂载：仅覆盖业务路由（/healthz、/favicon.svg 不受限）
+    // 限流挂载：仅覆盖业务路由（/、/healthz、/favicon.svg 不受限）
     let router = router.layer(axum::middleware::from_fn_with_state(
         state.clone(),
         rate_limit_mw,
     ));
-    // 吉祥物 favicon + 健康检查：根路径（浏览器 / 前端直接引用）
+    // 吉祥物 favicon + 健康检查 + 落地页：根路径（浏览器 / 前端直接引用）
+    // fallback 放在 merge 之后，确保未匹配路径统一走吉祥物错误页（浏览器）
+    // 或 JSON 信封 404（客户端），二者由 pages::not_found 按 Accept 协商。
     axum::Router::<AppState>::new()
+        .route("/", axum::routing::get(crate::pages::landing))
         .route("/healthz", axum::routing::get(healthz_handler))
         .route("/favicon.svg", axum::routing::get(favicon_svg))
         .merge(router)
+        .fallback(crate::pages::not_found)
         .with_state(state)
 }
 
@@ -439,5 +443,43 @@ async fn rate_limit_mw(
         let mut resp = axum::Json(envelope).into_response();
         *resp.status_mut() = axum::http::StatusCode::TOO_MANY_REQUESTS;
         resp
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 吉祥物内嵌 SVG 自检：标签闭合、无障碍标签齐备，且每个 `url(#id)` 填充
+    /// 引用都能找到对应 `id` 定义——id 写错会让背景 / 围巾渲染成空白，
+    /// 编译期查不出来（不依赖 DB，可独立运行）。
+    #[test]
+    fn mascot_svg_is_self_contained() {
+        let svg = MASCOT_SVG;
+        assert!(svg.starts_with("<svg "), "应以 <svg 开头");
+        assert!(svg.ends_with("</svg>"), "应以 </svg> 收尾");
+        assert!(svg.contains("aria-label="), "应声明 aria-label 无障碍标签");
+        assert!(svg.contains("安安"), "应含吉祥物名");
+
+        for (at, _) in svg.match_indices("url(#") {
+            let rest = &svg[at + "url(#".len()..];
+            let id = &rest[..rest.find(')').expect("url(# 引用未闭合")];
+            assert!(
+                svg.contains(&format!("id=\"{id}\"")),
+                "url(#{id}) 缺少对应 id 定义，图形会渲染为空白"
+            );
+        }
+    }
+
+    /// 健康检查回传吉祥物与版本号（纯函数，不依赖 DB）
+    #[test]
+    fn healthz_exposes_mascot_and_version() {
+        let h = healthz();
+        assert_eq!(h["status"], "ok");
+        assert_eq!(h["version"], env!("CARGO_PKG_VERSION"));
+        assert!(
+            h["mascot"].as_str().is_some_and(|m| !m.is_empty()),
+            "/healthz 应回传非空 mascot 字段"
+        );
     }
 }

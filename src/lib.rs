@@ -10,6 +10,7 @@ pub mod crypto;
 pub mod error;
 pub mod middleware;
 pub mod models;
+pub mod pages;
 pub mod providers;
 pub mod response;
 pub mod routes;
