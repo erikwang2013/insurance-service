@@ -55,7 +55,8 @@ if command -v gh >/dev/null 2>&1 && gh release view "$TAG" >/dev/null 2>&1; then
   echo "==> release ${TAG} 已存在，跳过"
 else
   # Release notes：取自该 tag 之前的提交记录（无先前 tag 则从首个提交起）
-  PREV="$(git tag --sort=-version:refname | head -1 || true)"
+  # 排除本次 tag 自身:否则 PREV == TAG,会误触发下面的"全史兜底"
+  PREV="$(git tag --sort=-version:refname | grep -vx "$TAG" | head -1 || true)"
   [[ -z "$PREV" || "$PREV" == "$TAG" ]] && PREV="$(git rev-list --max-parents=0 HEAD)"
   NOTES="$(git log --oneline "${PREV}..HEAD" | sed 's/^[ \t]*//' | sed '/^$/d' | head -30 || true)"
   [[ -z "$NOTES" ]] && NOTES="发布 ${TAG}"
