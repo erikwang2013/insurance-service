@@ -292,7 +292,7 @@ RESTful 命名空间 `/api/v1`。三端（Flutter/小程序/鸿蒙）共用同�
 
 | 方法 | 路径 | 动作 | 返回 |
 |------|------|------|------|
-| GET | `/` | 落地页（内联吉祥物安安） | HTML |
+| GET | `/` | 落地页（内联吉祥物霜霜） | HTML |
 | GET | `/healthz` | 健康检查 | JSON 信封（`data.mascot` 含吉祥物标识） |
 | GET | `/favicon.svg` | 吉祥物 SVG | `image/svg+xml` |
 | * | 未匹配路径 | 404 兜底 | 浏览器 → HTML 错误页；其余 → JSON `40400` |

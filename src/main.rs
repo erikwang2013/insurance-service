@@ -23,8 +23,8 @@ async fn main() {
         }
     };
 
-    // 吉祥物安安上场（控制台问候）
-    println!("{}\n  🛡️ 安安 says：保险路上，为你护航！\n", routes::MASCOT_BANNER);
+    // 吉祥物霜霜上场（控制台问候）
+    println!("{}\n  ❄️ 霜霜 says：保险路上，为你护航！\n", routes::MASCOT_BANNER);
 
     // 2. 加载配置（缺失时无法运行，直接退出）
     let cfg = match AppConfig::from_env() {

@@ -1,7 +1,7 @@
 # 保险服务平台 — 规划文档（本地备份）
 
 > 本文档为本地规划快照：与 [`backend-architecture.md`](./backend-architecture.md) §13 Roadmap、[db-schema.md](./db-schema.md)、[README.md](../README.md) 保持一致。
-> 更新时请同步维护三处。版本: 2026-09-26（v1.8.0）。
+> 更新时请同步维护三处。版本: 2026-09-26（v1.9.0）。
 
 ---
 

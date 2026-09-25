@@ -13,12 +13,12 @@
 |------|-----|
 | 语言 / 版本 | Rust 2024 edition（rust-version ≥ 1.87） |
 | 许可证 | Apache-2.0 |
-| 版本 | 1.8.0 |
+| 版本 | 1.9.0 |
 | HTTP 框架 | axum 0.8 + bee_rust（bee_router / bee_orm / 过滤器管线） |
 | 存储 | MySQL 8.4（业务库，表主键由应用层 idgen_rs snowflake 生成）· Redis / 内存缓存（会话）· OpenSearch（搜索，可选） |
 
 <p align="center">
-  <img src="docs/mascot.svg" width="120" height="120" alt="吉祥物安安——守护熊猫" />
+  <img src="docs/mascot.svg" width="120" height="120" alt="吉祥物霜霜——雪豹幼崽" />
 </p>
 
 ---
@@ -75,7 +75,7 @@ insurance-service/
 │   ├── app.toml               # 应用配置模板（server / database / redis / opensearch / jwt / crypto / log）
 │   └── bee.toml               # bee_rust 管线配置
 ├── docs/                      # 文档与架构图
-│   ├── mascot.svg             # 吉祥物安安（守护熊猫，同步内嵌至 /favicon.svg）
+│   ├── mascot.svg             # 吉祥物霜霜（雪豹幼崽，同步内嵌至 /favicon.svg）
 │   ├── architecture.svg       # 系统架构图
 │   ├── features.svg           # 功能总览图
 │   ├── lifecycle.svg          # 请求生命周期图
@@ -213,9 +213,9 @@ cargo test           # 全部测试（单元 + 集成）
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| GET | `/` | 落地页（HTML，内联吉祥物安安；浏览器人工访问） |
+| GET | `/` | 落地页（HTML，内联吉祥物霜霜；浏览器人工访问） |
 | GET | `/healthz` | 健康检查（响应含吉祥物 `mascot` 字段） |
-| GET | `/favicon.svg` | 吉祥物安安（内嵌 SVG，免静态目录） |
+| GET | `/favicon.svg` | 吉祥物霜霜（内嵌 SVG，免静态目录） |
 | — | 未匹配路径 | 浏览器（`Accept: text/html`）→ 吉祥物 404 页；其余 → JSON 信封 `40400` |
 | POST | `/api/v1/auth/register` | 注册（返回双令牌） |
 | POST | `/api/v1/auth/login` | 账号密码登录 |

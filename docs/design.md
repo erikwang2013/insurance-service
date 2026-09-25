@@ -2,7 +2,7 @@
 
 > 本文档为**设计决策摘要与索引**，权威细节见 `docs/backend-architecture.md`（架构）与
 > `docs/db-schema.md`（19 表 Schema 与 Rust models）。设计正文不在此重复。
-> 版本: 2026-09-26（v1.8.0）。
+> 版本: 2026-09-26（v1.9.0）。
 
 ---
 
@@ -41,7 +41,7 @@ MVC 分层，过滤器链承载横切关注点：
 | 搜索解耦 | 业务只写 MySQL；OpenSearch 经 `search_sync_logs` 异步最终一致同步；未就绪降级 LIKE | db-schema.md §9 |
 | 多端共用 | Flutter / 小程序 / 鸿蒙共用 REST API | backend-architecture.md §1 |
 | HTML 面边界 | 仅非 API 路径按 `Accept` 渲染 HTML（落地页 / 错误页）；`/api/v1/*` 恒为 JSON 信封，不受请求头影响 | src/pages.rs · backend-architecture.md §6.4 |
-| 吉祥物 | 安安（守护熊猫）：`docs/mascot.svg` ↔ 内嵌 `MASCOT_SVG` → `/favicon.svg`、启动横幅、`/healthz.mascot`、HTML 页 | src/routes.rs · src/templates/ |
+| 吉祥物 | 霜霜（雪豹幼崽）：`docs/mascot.svg` ↔ 内嵌 `MASCOT_SVG` → `/favicon.svg`、启动横幅、`/healthz.mascot`、HTML 页 | src/routes.rs · src/templates/ |
 
 ## 3. 外部 Provider 抽象
 

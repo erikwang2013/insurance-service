@@ -136,7 +136,7 @@ mod tests {
     fn landing_renders_inline_mascot() {
         let body = render_body(&engine(), "landing.html", HashMap::new()).expect("落地页应渲染成功");
         assert!(body.contains("<svg"), "应内联吉祥物 SVG");
-        assert!(body.contains("url(#scarf)"), "SVG 内容不应被转义");
+        assert!(body.contains("url(#ice)"), "SVG 内容不应被转义");
         assert!(body.contains("保险服务平台"));
         assert!(body.contains(env!("CARGO_PKG_VERSION")), "应显示版本号");
     }

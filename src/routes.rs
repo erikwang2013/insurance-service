@@ -289,17 +289,17 @@ pub fn route_table() -> Vec<Route> {
     ]
 }
 
-/// 吉祥物（安安）—— 内嵌 SVG，另存于 docs/mascot.svg，两处同源
-pub const MASCOT_SVG: &str = r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400" role="img" aria-label="安安，保险服务平台吉祥物——守护熊猫"> <defs> <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1"> <stop offset="0" stop-color="#5B8DEF"/> <stop offset="1" stop-color="#3B6FD4"/> </linearGradient> <linearGradient id="scarf" x1="0" y1="0" x2="1" y2="1"> <stop offset="0" stop-color="#FF8C33"/> <stop offset="1" stop-color="#E8721F"/> </linearGradient> </defs> <circle cx="200" cy="200" r="188" fill="url(#bg)"/> <circle cx="200" cy="200" r="150" fill="#FFFFFF" opacity="0.06"/> <circle cx="130" cy="118" r="36" fill="#20242E"/> <circle cx="270" cy="118" r="36" fill="#20242E"/> <circle cx="130" cy="118" r="16" fill="#FFD9E0"/> <circle cx="270" cy="118" r="16" fill="#FFD9E0"/> <ellipse cx="200" cy="330" rx="86" ry="78" fill="#FFFFFF"/> <g transform="rotate(14 122 312)"> <ellipse cx="122" cy="312" rx="26" ry="50" fill="#20242E"/> </g> <g transform="rotate(-14 278 312)"> <ellipse cx="278" cy="312" rx="26" ry="50" fill="#20242E"/> </g> <path d="M118 262 Q200 298 282 262 L288 284 Q200 316 112 284 Z" fill="url(#scarf)"/> <path d="M252 288 L258 358 Q259 366 250 366 L240 366 Q231 366 232 358 L236 288 Z" fill="#E8721F"/> <line x1="236" y1="312" x2="258" y2="312" stroke="#FFB25E" stroke-width="4"/> <line x1="236" y1="330" x2="258" y2="330" stroke="#FFB25E" stroke-width="4"/> <path d="M240 366 L236 376" stroke="#E8721F" stroke-width="5" stroke-linecap="round"/> <path d="M250 366 L254 376" stroke="#E8721F" stroke-width="5" stroke-linecap="round"/> <ellipse cx="162" cy="392" rx="34" ry="16" fill="#20242E"/> <ellipse cx="238" cy="392" rx="34" ry="16" fill="#20242E"/> <ellipse cx="200" cy="196" rx="92" ry="86" fill="#FFFFFF"/> <ellipse cx="160" cy="196" rx="24" ry="28" fill="#20242E" transform="rotate(-8 160 196)"/> <ellipse cx="240" cy="196" rx="24" ry="28" fill="#20242E" transform="rotate(8 240 196)"/> <circle cx="161" cy="193" r="13.5" fill="#FFFFFF"/> <circle cx="239" cy="193" r="13.5" fill="#FFFFFF"/> <circle cx="165" cy="196" r="8" fill="#1A1A1A"/> <circle cx="235" cy="196" r="8" fill="#1A1A1A"/> <circle cx="162" cy="193" r="3.6" fill="#FFFFFF"/> <circle cx="168.5" cy="200" r="1.7" fill="#FFFFFF"/> <circle cx="238" cy="193" r="3.6" fill="#FFFFFF"/> <circle cx="231.5" cy="200" r="1.7" fill="#FFFFFF"/> <ellipse cx="200" cy="226" rx="9" ry="6.5" fill="#20242E"/> <path d="M184 239 Q192 249 200 240 Q208 249 216 239" stroke="#20242E" stroke-width="4" fill="none" stroke-linecap="round"/> <ellipse cx="132" cy="222" rx="15" ry="9" fill="#FF9AA8" opacity="0.75"/> <ellipse cx="268" cy="222" rx="15" ry="9" fill="#FF9AA8" opacity="0.75"/></svg>"##;
+/// 吉祥物（霜霜，雪豹幼崽）—— 内嵌 SVG，另存于 docs/mascot.svg，两处同源
+pub const MASCOT_SVG: &str = r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400" role="img" aria-label="霜霜，insurance-service 吉祥物——雪豹幼崽，尾尖是一片雪花结晶，怀里抱着统一信封"> <title>霜霜 · insurance-service 吉祥物（雪豹幼崽）</title> <defs> <linearGradient id="ice" x1="0" y1="0" x2="0" y2="1"> <stop offset="0" stop-color="#6E9BF5"/> <stop offset="1" stop-color="#3B6FD4"/> </linearGradient> <linearGradient id="fur" gradientUnits="userSpaceOnUse" x1="120" y1="96" x2="280" y2="384"> <stop offset="0" stop-color="#FFFFFF"/> <stop offset="1" stop-color="#E4EEFB"/> </linearGradient> <linearGradient id="seal" x1="0" y1="0" x2="1" y2="1"> <stop offset="0" stop-color="#FF9A44"/> <stop offset="1" stop-color="#E8721F"/> </linearGradient> <g id="sfArm" fill="#FFFFFF"> <path d="M316 190 L309 186 L316 134 L323 186 Z"/> <path d="M316 158 L303 147 L311 161 Z"/> <path d="M316 158 L329 147 L321 161 Z"/> </g> </defs> <circle cx="200" cy="200" r="188" fill="url(#ice)"/> <circle cx="200" cy="200" r="150" fill="#FFFFFF" opacity="0.06"/> <path d="M200 30 L347 115 L347 285 L200 370 L53 285 L53 115 Z" fill="#FFFFFF" opacity="0.05"/> <path d="M200 200 L347 115 L347 285 Z" fill="#FFFFFF" opacity="0.04"/> <path d="M92 88 A150 150 0 0 1 188 52" stroke="#FFFFFF" stroke-width="9" fill="none" opacity="0.16" stroke-linecap="round"/> <g fill="#FFFFFF" opacity="0.26"> <circle cx="96" cy="122" r="4.5"/> <circle cx="314" cy="106" r="3.5"/> <circle cx="288" cy="336" r="4"/> <circle cx="112" cy="300" r="3"/> </g> <g fill="#FFFFFF" opacity="0.5"> <path d="M84 236 Q86 246 96 248 Q86 250 84 260 Q82 250 72 248 Q82 246 84 236 Z"/> <path d="M116 152 Q117 158 123 159 Q117 160 116 166 Q115 160 109 159 Q115 158 116 152 Z"/> </g> <path d="M268 322 Q320 314 330 264 Q334 246 330 232" stroke="url(#fur)" stroke-width="32" fill="none" stroke-linecap="round"/> <path d="M272 326 Q314 314 324 268 Q326 254 324 244" stroke="url(#fur)" stroke-width="22" fill="none" stroke-linecap="round"/> <path d="M284 320 Q312 308 320 278" stroke="#E4EEFB" stroke-width="8" fill="none" stroke-linecap="round" opacity="0.85"/> <circle cx="316" cy="186" r="58" fill="#FFFFFF" opacity="0.12"/> <g> <use href="#sfArm"/> <use href="#sfArm" transform="rotate(60 316 186)"/> <use href="#sfArm" transform="rotate(120 316 186)"/> <g transform="rotate(180 316 186)"> <use href="#sfArm"/> <use href="#sfArm" transform="rotate(60 316 186)"/> <use href="#sfArm" transform="rotate(120 316 186)"/> </g> </g> <circle cx="316" cy="186" r="14" fill="#D8E8FC"/> <circle cx="316" cy="186" r="6.5" fill="#FFFFFF"/> <g fill="none" stroke="#A9C6EE" stroke-width="3"> <circle cx="300" cy="294" r="5"/> <circle cx="328" cy="252" r="4.5"/> </g> <ellipse cx="200" cy="306" rx="76" ry="68" fill="url(#fur)"/> <ellipse cx="200" cy="322" rx="52" ry="44" fill="#FFFFFF" opacity="0.55"/> <g fill="none" stroke="#A9C6EE" stroke-width="3.4"> <circle cx="150" cy="288" r="7"/> <circle cx="250" cy="294" r="6"/> <circle cx="132" cy="324" r="6.5"/> <circle cx="268" cy="328" r="5.5"/> <circle cx="176" cy="264" r="5"/> <circle cx="226" cy="266" r="5"/> </g> <ellipse cx="154" cy="316" rx="21" ry="40" fill="url(#fur)" transform="rotate(16 154 316)"/> <ellipse cx="246" cy="316" rx="21" ry="40" fill="url(#fur)" transform="rotate(-16 246 316)"/> <g> <rect x="154" y="312" width="92" height="56" rx="6" fill="#F7FAFF" stroke="#C9D8EE" stroke-width="2"/> <path d="M156 315 L200 345 L244 315" fill="#E9F1FE" stroke="#C9D8EE" stroke-width="2" stroke-linejoin="round"/> <rect x="166" y="352" width="30" height="4" rx="2" fill="#C9D8EE"/> <rect x="166" y="360" width="18" height="4" rx="2" fill="#DDE7F7"/> <circle cx="222" cy="356" r="13" fill="url(#seal)"/> <path d="M216 356 L220 360 L228 351" stroke="#FFFFFF" stroke-width="3" fill="none" stroke-linecap="round" stroke-linejoin="round"/> </g> <ellipse cx="160" cy="370" rx="26" ry="14" fill="url(#fur)"/> <ellipse cx="240" cy="370" rx="26" ry="14" fill="url(#fur)"/> <g fill="#C9D8EE" opacity="0.75"> <circle cx="152" cy="368" r="3"/> <circle cx="161" cy="366" r="3"/> <circle cx="170" cy="368" r="3"/> <circle cx="232" cy="368" r="3"/> <circle cx="241" cy="366" r="3"/> <circle cx="250" cy="368" r="3"/> </g> <ellipse cx="140" cy="124" rx="32" ry="28" fill="#F1F6FE"/> <ellipse cx="260" cy="124" rx="32" ry="28" fill="#F1F6FE"/> <ellipse cx="140" cy="126" rx="15" ry="12" fill="#C9DDFA"/> <ellipse cx="260" cy="126" rx="15" ry="12" fill="#C9DDFA"/> <ellipse cx="200" cy="186" rx="86" ry="80" fill="url(#fur)"/> <circle cx="120" cy="212" r="19" fill="url(#fur)"/> <circle cx="280" cy="212" r="19" fill="url(#fur)"/> <circle cx="134" cy="238" r="14" fill="url(#fur)"/> <circle cx="266" cy="238" r="14" fill="url(#fur)"/> <g stroke="#CFE3FB" stroke-width="3" stroke-linecap="round" fill="none"> <path d="M200 135 V157 M190.5 140.5 L209.5 151.5 M190.5 151.5 L209.5 140.5"/> </g> <ellipse cx="164" cy="190" rx="25" ry="21" fill="#C9DDFA" transform="rotate(-8 164 190)"/> <ellipse cx="236" cy="190" rx="25" ry="21" fill="#C9DDFA" transform="rotate(8 236 190)"/> <circle cx="164" cy="188" r="13.5" fill="#FFFFFF"/> <circle cx="236" cy="188" r="13.5" fill="#FFFFFF"/> <circle cx="167" cy="190" r="9.5" fill="#5B8DEF"/> <circle cx="233" cy="190" r="9.5" fill="#5B8DEF"/> <circle cx="168" cy="191" r="5.5" fill="#16233A"/> <circle cx="232" cy="191" r="5.5" fill="#16233A"/> <circle cx="163" cy="185" r="4" fill="#FFFFFF"/> <circle cx="172" cy="196" r="1.8" fill="#FFFFFF"/> <circle cx="237" cy="185" r="4" fill="#FFFFFF"/> <circle cx="228" cy="196" r="1.8" fill="#FFFFFF"/> <path d="M192 212 Q200 205 208 212 Q205 223 200 223 Q195 223 192 212 Z" fill="#2B3A55"/> <path d="M186 228 Q194 238 200 229 Q206 238 214 228" stroke="#2B3A55" stroke-width="3.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/> <g stroke="#B7C9E6" stroke-width="3" stroke-linecap="round" opacity="0.9"> <path d="M166 222 L136 216"/> <path d="M166 230 L138 232"/> <path d="M234 222 L264 216"/> <path d="M234 230 L262 232"/> </g> <ellipse cx="136" cy="214" rx="13" ry="7" fill="#FFB8C6" opacity="0.5"/> <ellipse cx="264" cy="214" rx="13" ry="7" fill="#FFB8C6" opacity="0.5"/> </svg>"##;
 
 /// 吉祥物 ASCII 版（启动日志 / 控制台）
-pub const MASCOT_BANNER: &str = r#"  .___________________.
- / ,           ,   o   \
-||    ____     __      ||
-||  o/    \   /  \_    ||
-||____  |____|   | \___||
-||   \/   \/   ___      ||
- \_____________________/"#;
+pub const MASCOT_BANNER: &str = r#"  ._________________________________.
+ /       ,         *        ,       \
+ /        /\_____________/\         \
+||     (   o         o   )  *      ||
+||        \       ω       /        ||
+||        \___________/   *        ||
+ \__________________________________/"#;
 
 /// 健康检查响应
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -317,7 +317,7 @@ pub fn healthz() -> serde_json::Value {
         status: "ok".into(),
         service: "insurance-service".into(),
         version: env!("CARGO_PKG_VERSION").into(),
-        mascot: "安安 🛡️ 保险服务平台吉祥物 (docs/mascot.svg)".into(),
+        mascot: "霜霜 ❄ 保险服务平台吉祥物——雪豹幼崽 (docs/mascot.svg)".into(),
     })
 }
 
@@ -451,15 +451,15 @@ mod tests {
     use super::*;
 
     /// 吉祥物内嵌 SVG 自检：标签闭合、无障碍标签齐备，且每个 `url(#id)` 填充
-    /// 引用都能找到对应 `id` 定义——id 写错会让背景 / 围巾渲染成空白，
-    /// 编译期查不出来（不依赖 DB，可独立运行）。
+    /// 与 `<use href="#id">` 引用都能找到对应 `id` 定义——id 写错会让冰面底盘 /
+    /// 尾尖雪花渲染成空白，编译期查不出来（不依赖 DB，可独立运行）。
     #[test]
     fn mascot_svg_is_self_contained() {
         let svg = MASCOT_SVG;
         assert!(svg.starts_with("<svg "), "应以 <svg 开头");
         assert!(svg.ends_with("</svg>"), "应以 </svg> 收尾");
         assert!(svg.contains("aria-label="), "应声明 aria-label 无障碍标签");
-        assert!(svg.contains("安安"), "应含吉祥物名");
+        assert!(svg.contains("霜霜"), "应含吉祥物名");
 
         for (at, _) in svg.match_indices("url(#") {
             let rest = &svg[at + "url(#".len()..];
@@ -467,6 +467,17 @@ mod tests {
             assert!(
                 svg.contains(&format!("id=\"{id}\"")),
                 "url(#{id}) 缺少对应 id 定义，图形会渲染为空白"
+            );
+        }
+
+        // 尾尖雪花走 <use href="#sfArm">，引用写错同样只会静默少一块图形
+        let pat = "href=\"#";
+        for (at, _) in svg.match_indices(pat) {
+            let rest = &svg[at + pat.len()..];
+            let id = &rest[..rest.find('"').expect("href 引用未闭合")];
+            assert!(
+                svg.contains(&format!("id=\"{id}\"")),
+                "href=#{id} 缺少对应 id 定义，图形会渲染为空白"
             );
         }
     }
