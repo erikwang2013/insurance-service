@@ -2,7 +2,7 @@
 
 > 本文档为**设计决策摘要与索引**，权威细节见 `docs/backend-architecture.md`（架构）与
 > `docs/db-schema.md`（19 表 Schema 与 Rust models）。设计正文不在此重复。
-> 版本: 2026-09-26（v1.9.0）。
+> 版本: 2026-10-19（v1.10.0）。
 
 ---
 

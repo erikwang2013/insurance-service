@@ -161,7 +161,7 @@ impl ContractService {
             )
             .await
             .map_err(db_error)?;
-        Ok(rows.iter().map(|r| row_to_contract(r)).collect::<Result<Vec<_>>>()?)
+        rows.iter().map(row_to_contract).collect::<Result<Vec<_>>>()
     }
 }
 

@@ -288,16 +288,17 @@ RESTful 命名空间 `/api/v1`。三端（Flutter/小程序/鸿蒙）共用同�
 | admin | * | `/api/v1/admin/**` | 管理端（产品上架/审核） | 需 ADMIN/OPERATOR |
 | admin | GET | `/api/v1/admin/audit-logs` | 审计日志（OPERATOR/ADMIN 过滤分页，v1.6.0） | 需 ADMIN/OPERATOR |
 
-**根路径（不在 `/api/v1` 下；浏览器 HTML 面 + 运维探针，v1.8.0）**：
+**根路径（不在 `/api/v1` 下；浏览器 HTML 面 + 运维探针，v1.8.0 起；v1.10.0 增宠物表情）**：
 
 | 方法 | 路径 | 动作 | 返回 |
 |------|------|------|------|
 | GET | `/` | 落地页（内联吉祥物霜霜） | HTML |
 | GET | `/healthz` | 健康检查 | JSON 信封（`data.mascot` 含吉祥物标识） |
 | GET | `/favicon.svg` | 吉祥物 SVG | `image/svg+xml` |
+| GET | `/pet/{slug}` | 项目宠物表情 SVG（12 种形态，编译期内嵌） | `image/svg+xml` |
 | * | 未匹配路径 | 404 兜底 | 浏览器 → HTML 错误页；其余 → JSON `40400` |
 
-> **实现核对**：本表为规划蓝图；现网实现以 `src/routes.rs` 的 `route_table()` 为准（共 39 个业务端点 + 上述根路径）。v1.6.0 新增 `auth/wechat/bind`、`policies/{id}/beneficiaries`、`claims/{id}/documents`、`admin/audit-logs` 已并入上表。费率计算（v1.6.0）：`quote_rates` 命中 → premium = 保额 × rate；未命中或费率表缺失（ERRNO 1146）→ 回退使用请求保费。v1.8.0 新增根路径 HTML 面（见 §6.4）。
+> **实现核对**：本表为规划蓝图；现网实现以 `src/routes.rs` 的 `route_table()` 为准（共 39 个业务端点 + 上述根路径）。v1.6.0 新增 `auth/wechat/bind`、`policies/{id}/beneficiaries`、`claims/{id}/documents`、`admin/audit-logs` 已并入上表。费率计算（v1.6.0）：`quote_rates` 命中 → premium = 保额 × rate；未命中或费率表缺失（ERRNO 1146）→ 回退使用请求保费。v1.8.0 新增根路径 HTML 面（见 §6.4）；v1.10.0 新增 `/pet/{slug}` 宠物表情出口与 Social Preview 资产。
 
 ### 路由注册示例（bee_router 风格）
 
@@ -509,13 +510,14 @@ pub enum AppError {
 
 > 所有错误经统一 handler 转为 `ResponseEnvelope`，Controller 只 `return Err(...)`，由框架层兜底序列化。
 
-### 6.4 浏览器 HTML 面（Accept 协商，v1.8.0）
+### 6.4 浏览器 HTML 面（Accept 协商，v1.8.0 起）
 
 除 `/api/v1/*` 的 JSON 接口外，服务对**非 API 路径**额外提供一层 HTML 面，供浏览器人工访问与排障：
 
 | 路径 | 行为 |
 |------|------|
 | `GET /` | 落地页（`pages::landing`，模板 `landing.html`，内联吉祥物） |
+| `GET /pet/{slug}` | 宠物表情 SVG（`pet::svg_handler`，12 种形态编译期内嵌；未知 slug → 404） |
 | 未匹配路径 | `pages::not_found` 兜底：`Accept` 含 `text/html` → 吉祥物错误页；否则 JSON 信封 `40400` |
 
 **边界（关键）**：`/api/v1/*` 下**永远**返回 JSON 信封，即便请求头声明 `Accept: text/html` 也不改写——
@@ -1081,7 +1083,7 @@ master_key = "${CRYPTO_MASTER_KEY}"
 
 ## 13. 分阶段实现 Roadmap
 
-### 阶段 0 — 后端骨架（先行）· v1.8.0 实现状态
+### 阶段 0 — 后端骨架（先行）· v1.10.0 实现状态
 - [x] Cargo workspace + bee-rust 依赖 + 配置加载（`config.rs`：环境变量 + `config/app.toml`）
 - [x] `install.sql` + bee_orm Model 结构体（19 表，见 db-schema.md）
 - [x] MySQL 连接（`db.rs` mysql_async 连接池 + 事务）；Redis 仍为内存缓存暂代（`bee_cache::MemoryCache`）
@@ -1091,7 +1093,7 @@ master_key = "${CRYPTO_MASTER_KEY}"
 - [x] CryptoService（AES-256-GCM + 脱敏）
 - [x] SyncWorker 骨架 + search_sync_logs 消费
 
-### 阶段 1 — 核心交易闭环 · v1.8.0 实现状态
+### 阶段 1 — 核心交易闭环 · v1.10.0 实现状态
 - [x] 产品管理 + 分类 + 条款（索引同步仍走降级路径）
 - [x] 报价（QuoteService + `quote_rates` 费率表驱动；未命中回退请求保费）
 - [x] 订单 + 支付（PayProvider 接口 + Mock，支付回调幂等）

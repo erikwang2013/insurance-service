@@ -17,8 +17,8 @@
     <rect x="30" y="72" width="460" height="10" fill="#4a6785"/>
     <text x="260" y="72" text-anchor="middle" font-size="14" fill="#fff" font-weight="600">① 用户与认证</text>
     <text x="50" y="104" font-size="12.5" fill="#2b3a4a">• 注册：用户名唯一校验 + 密码 argon2 哈希存储，签发双令牌</text>
-    <text x="50" y="124" font-size="12.5" fill="#2b3a4a">• 登录：账号密码 / 微信（code2session 绑定直登，凭据缺失降级），错误不区分账号与密码</text>
-    <text x="50" y="144" font-size="12.5" fill="#2b3a4a">• 令牌：JWT HS256 双令牌，token_version 吊销 +1（logout / 改密 / 换绑）；RBAC 角色</text>
+    <text x="50" y="124" font-size="12.5" fill="#2b3a4a">• 登录：账号密码 / 微信（code2session，凭据缺失降级），不泄露账号</text>
+    <text x="50" y="144" font-size="12.5" fill="#2b3a4a">• 令牌：JWT 双令牌，token_version 吊销（logout / 改密 / 换绑）；RBAC</text>
   </g>
 
   <!-- ===================== 2. 商品 ===================== -->
@@ -27,7 +27,7 @@
     <rect x="510" y="52" width="460" height="30" rx="10" fill="#2e7048"/>
     <rect x="510" y="72" width="460" height="10" fill="#2e7048"/>
     <text x="740" y="72" text-anchor="middle" font-size="14" fill="#fff" font-weight="600">② 保险商品</text>
-    <text x="530" y="104" font-size="12.5" fill="#2b3a4a">• 列表：分页 / 状态过滤（ON_SALE · OFF_SHELF·软删）/ 精选位</text>
+    <text x="530" y="104" font-size="12.5" fill="#2b3a4a">• 列表：分页 / 状态过滤（ON_SALE · OFF_SHELF · 软删）/ 精选位</text>
     <text x="530" y="124" font-size="12.5" fill="#2b3a4a">• 详情：单商品查询；关联条款（insurance_product_clause）阅读</text>
     <text x="530" y="144" font-size="12.5" fill="#2b3a4a">• 管理：运营后台建档 / 上架 / 下架 / 停售（OPERATOR · ADMIN）</text>
   </g>
@@ -38,8 +38,8 @@
     <rect x="30" y="176" width="460" height="30" rx="10" fill="#643a94"/>
     <rect x="30" y="196" width="460" height="10" fill="#643a94"/>
     <text x="260" y="196" text-anchor="middle" font-size="14" fill="#fff" font-weight="600">③ 全文搜索</text>
-    <text x="50" y="228" font-size="12.5" fill="#2b3a4a">• 当前：MySQL LIKE 搜索（search_service，含分页保护：page≥1、size clamp）</text>
-    <text x="50" y="248" font-size="12.5" fill="#2b3a4a">• 规划：OpenSearch（rust-scout 门面 / elasticsearch 特性）+ 同步 Worker 增量索引</text>
+    <text x="50" y="228" font-size="12.5" fill="#2b3a4a">• 当前：MySQL LIKE 搜索（search_service，分页保护）</text>
+    <text x="50" y="248" font-size="12.5" fill="#2b3a4a">• 规划：OpenSearch（rust-scout）+ 同步 Worker 增量索引</text>
     <text x="50" y="268" font-size="12.5" fill="#2b3a4a">• 降级路径：索引未就绪自动回退 LIKE，不阻塞业务</text>
   </g>
 
@@ -78,14 +78,15 @@
 
   <!-- ===================== 7. 横切与质量 ===================== -->
   <g>
-    <rect x="30" y="424" width="940" height="104" rx="10" fill="#fff" stroke="#b9c6d6"/>
+    <rect x="30" y="424" width="940" height="120" rx="10" fill="#fff" stroke="#b9c6d6"/>
     <rect x="30" y="424" width="940" height="30" rx="10" fill="#1f2d3d"/>
     <rect x="30" y="444" width="940" height="10" fill="#1f2d3d"/>
     <text x="500" y="444" text-anchor="middle" font-size="14" fill="#fff" font-weight="600">⑦ 横切能力</text>
-    <text x="50" y="474" font-size="12.5" fill="#2b3a4a">安全：SecurityFilter 入站扫描 · 参数化查询防注入 · AES-256-GCM 敏感字段 · argon2 口令哈希 · 令牌精确过期（leeway=0）</text>
-    <text x="50" y="494" font-size="12.5" fill="#2b3a4a">可观测：Trace 过滤器生成 trace_id，贯穿 RequestCtx；统一响应信封（code / message / data，业务错误 40000）</text>
-    <text x="50" y="514" font-size="12.5" fill="#2b3a4a">质量：集成测试 129 项（单元 14 + 集成 115，MySQL 缺失自动 SKIP）覆盖认证 / 商品 / 搜索 / 交易 / 理赔 / 审计；主键：snowflake（idgen_rs，worker_id 0-63）</text>
+    <text x="50" y="472" font-size="12.5" fill="#2b3a4a">安全：SecurityFilter 入站扫描 · 参数化查询防注入 · AES-256-GCM 敏感字段 · argon2 口令哈希 · 令牌精确过期（leeway=0）</text>
+    <text x="50" y="490" font-size="12.5" fill="#2b3a4a">可观测：Trace 过滤器生成 trace_id，贯穿 RequestCtx；统一响应信封（code / message / data，业务错误 40000）</text>
+    <text x="50" y="508" font-size="12.5" fill="#2b3a4a">HTML 面：落地页 + 吉祥物 404 页；/favicon.svg；12 种宠物表情形态（GET /pet/{slug}）</text>
+    <text x="50" y="526" font-size="12.5" fill="#2b3a4a">质量：单元测试 26 项 + 集成测试 115 项（集成需 MySQL，未配置则失败）覆盖认证 / 商品 / 搜索 / 交易 / 理赔 / 审计；主键 snowflake</text>
   </g>
 
-  <text x="972" y="540" text-anchor="end" font-size="22" font-weight="600" fill="#8ea0b5" fill-opacity="0.45" transform="rotate(-12 900 548)">https://erik.xyz</text>
+  <text x="972" y="552" text-anchor="end" font-size="22" font-weight="600" fill="#8ea0b5" fill-opacity="0.45" transform="rotate(-12 900 548)">https://erik.xyz</text>
 </svg>

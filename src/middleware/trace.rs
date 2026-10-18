@@ -18,7 +18,7 @@ pub fn current_trace_id() -> String {
     CURRENT_TRACE
         .get()
         .cloned()
-        .unwrap_or_else(|| generate_trace_id())
+        .unwrap_or_else(generate_trace_id)
 }
 
 /// 生成一个新的 trace_id（UUID v4）

@@ -282,7 +282,7 @@ async fn query_audit_logs(
         sql.push_str(&conds.join(" AND "));
     }
     let total: i64 = conn
-        .exec_first(&format!("SELECT COUNT(*) {sql}"), args.clone())
+        .exec_first(format!("SELECT COUNT(*) {sql}"), args.clone())
         .await
         .map_err(db_error)?
         .unwrap_or(0);
@@ -292,7 +292,7 @@ async fn query_audit_logs(
     list_args.push(Value::from(offset as i64));
     let rows: Vec<Row> = conn
         .exec(
-            &format!(
+            format!(
                 "SELECT id, user_id, action, entity_type, entity_id, \
                  CAST(before_json AS CHAR) AS before_json, CAST(after_json AS CHAR) AS after_json, \
                  ip, user_agent, trace_id, created_at {sql} \

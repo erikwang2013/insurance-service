@@ -1,7 +1,7 @@
 # 保险服务平台 — 规划文档（本地备份）
 
 > 本文档为本地规划快照：与 [`backend-architecture.md`](./backend-architecture.md) §13 Roadmap、[db-schema.md](./db-schema.md)、[README.md](../README.md) 保持一致。
-> 更新时请同步维护三处。版本: 2026-09-26（v1.9.0）。
+> 更新时请同步维护三处。版本: 2026-10-19（v1.10.0）。
 
 ---
 
@@ -13,10 +13,10 @@ Rust（`bee_rust` + `axum`）实现的保险服务平台后端，覆盖
 
 ## 当前状态
 
-- **阶段 0 完成 · 阶段 1 基本完成（v1.8.0）**：用户认证（含微信绑定 / 令牌吊销）、保险商品、全文搜索（LIKE 降级）、
+- **阶段 0 完成 · 阶段 1 基本完成（v1.10.0）**：用户认证（含微信绑定 / 令牌吊销）、保险商品、全文搜索（LIKE 降级）、
   报价（`quote_rates` 费率表驱动）、理赔（报案 / 审核 / 资料）、运营后台与审计查询均已落地；
   **报价 → 订单 → 支付 → 保单 → 签约**交易闭环 API 已打通（支付 / 电子签为 Mock 渠道）。
-  `src/routes.rs` 已挂载 39 个业务端点 + `/`、`/healthz`、`/favicon.svg` 根路径。
+  `src/routes.rs` 已挂载 39 个业务端点 + `/`、`/healthz`、`/favicon.svg`、`/pet/{slug}` 根路径。
 - **待办**：OpenSearch 真实接入、保单 PDF、微信支付 / e签宝真实渠道、Flutter / 小程序 / 鸿蒙端联调。
 - 详细路线见下，逐项勾选进度同步自 `docs/tasks.md`（逐项实现状态以 `backend-architecture.md` §13 为准）。
 
@@ -54,6 +54,6 @@ Rust（`bee_rust` + `axum`）实现的保险服务平台后端，覆盖
 
 | 里程碑 | 判定标准 |
 |--------|----------|
-| 阶段 0 完成 ✅ | `cargo test` 全绿（v1.8.0：137 项 = 单元 22 + 集成 115，MySQL 缺失自动 SKIP）；`/healthz` 与 auth/product/search 路由可运行 |
+| 阶段 0 完成 ✅ | `cargo test --lib` 全绿（v1.10.0：单元 26 项）；集成 115 项需 MySQL（未配置则失败）；`/healthz` 与 auth/product/search 路由可运行 |
 | 阶段 1 完成 🔄 | 订单 → 支付（Mock 回调验签）→ 保单闭环走通 ✅；库表与 models 一致 ✅；待补保单 PDF |
 | 阶段 2 完成 | Flutter 端完整业务链路联调通过（未开始） |

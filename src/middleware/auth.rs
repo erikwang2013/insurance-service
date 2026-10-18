@@ -30,7 +30,7 @@ impl Role {
         }
     }
 
-    pub fn from_str(s: &str) -> Option<Self> {
+    pub fn parse(s: &str) -> Option<Self> {
         match s {
             "USER" => Some(Role::User),
             "AGENT" => Some(Role::Agent),
@@ -123,7 +123,7 @@ impl JwtService {
         let mut validation = jsonwebtoken::Validation::new(jsonwebtoken::Algorithm::HS256);
         // jsonwebtoken 默认 exp/nbf 有 60s 宽容窗口；这里按签发语义精确执行过期
         validation.leeway = 0;
-        validation.set_issuer(&[self.cfg.issuer.clone()]);
+        validation.set_issuer(std::slice::from_ref(&self.cfg.issuer));
         let data = jsonwebtoken::decode::<Claims>(
             token,
             &jsonwebtoken::DecodingKey::from_secret(self.cfg.secret.as_bytes()),
@@ -165,7 +165,7 @@ impl Filter for AuthFilter {
             .jwt
             .verify_token(token)
             .map_err(|_| crate::error::AppError::Unauthorized.to_string())?;
-        let role = Role::from_str(&claims.role).unwrap_or(Role::User);
+        let role = Role::parse(&claims.role).unwrap_or(Role::User);
         ctx.current_user = Some(AuthUser {
             id: claims.sub,
             role,

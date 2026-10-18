@@ -190,7 +190,7 @@ impl QuoteService {
                             value_opt_vec(b.id_card_enc.clone()),
                             value_opt_str(b.relationship.clone()),
                             Value::from(b.beneficiary_type.clone()),
-                            value_opt_dec(b.share_percent.clone()),
+                            value_opt_dec(b.share_percent),
                             Value::from(b.sort_order),
                         ];
                         tx.exec_drop(
@@ -250,13 +250,10 @@ fn rate_table_missing(e: &mysql_async::Error) -> bool {
     msg.contains("quote_rates") && msg.contains("doesn't exist")
 }
 
-// ---------- helpers: Value slice → mysql_async Row / Quote ----------
+// ---------- helpers: 行读取 ----------
 
 use mysql_async::Row;
 use chrono::NaiveDateTime;
-
-/// (已移除) Vec<Value> → Row 的包装被删除：mysql_async::Row 无公开构造器，
-/// 回读直接用 exec_first 得到 Row，见 QuoteService::create。
 
 /// 读行 → DateTime<Utc>
 fn dt_row(row: &Row, col: &str) -> DateTime<Utc> {

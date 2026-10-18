@@ -185,7 +185,7 @@ impl PolicyService {
             )
             .await
             .map_err(db_error)?;
-        Ok(rows.iter().map(|r| row_to_policy(r)).collect::<Result<Vec<_>>>()?)
+        rows.iter().map(row_to_policy).collect::<Result<Vec<_>>>()
     }
 
     /// 续保：校验原保单归属本人、is_renewable=1 且状态可续（ACTIVE 在保 / EXPIRED 已满期）
@@ -462,7 +462,7 @@ fn add_months(d: NaiveDate, months: i32) -> NaiveDate {
 
 fn bens_json(rows: &[Row]) -> serde_json::Value {
     let list = rows.iter().map(row_to_beneficiary).collect::<Result<Vec<_>>>();
-    serde_json::to_value(list.unwrap_or_default()).unwrap_or_else(|_| serde_json::Value::Null)
+    serde_json::to_value(list.unwrap_or_default()).unwrap_or(serde_json::Value::Null)
 }
 
 fn row_to_beneficiary(row: &Row) -> Result<Beneficiary> {

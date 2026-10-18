@@ -90,9 +90,7 @@ impl OrderService {
                     };
 
                     // 3) 计算金额：total_amount = premium, payable_amount = premium - discount
-                    let discount = req
-                        .discount_amount
-                        .unwrap_or_else(|| Decimal::ZERO);
+                    let discount = req.discount_amount.unwrap_or(Decimal::ZERO);
                     let total_amount = premium;
                     let payable_amount = total_amount.saturating_sub(discount);
                     let remark_opt: Option<String> = req.remark.clone();

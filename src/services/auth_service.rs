@@ -233,7 +233,7 @@ impl AuthService {
             .await;
 
         // 4. 签发令牌（携带当前 token_version）
-        let role = Role::from_str(&user.role).unwrap_or(Role::User);
+        let role = Role::parse(&user.role).unwrap_or(Role::User);
         self.issue_tokens(user.id, &user.username, role, user.token_version)
     }
 
@@ -253,7 +253,7 @@ impl AuthService {
         let user = user.ok_or_else(|| {
             AppError::business("该微信未绑定账号，请先登录后在个人中心绑定")
         })?;
-        let role = Role::from_str(&user.role).unwrap_or(Role::User);
+        let role = Role::parse(&user.role).unwrap_or(Role::User);
         self.issue_tokens(user.id, &user.username, role, user.token_version)
     }
 
@@ -336,7 +336,7 @@ impl AuthService {
         if user.status != User::STATUS_ACTIVE {
             return Err(AppError::business("账号已禁用或冻结，无法刷新令牌"));
         }
-        let role = Role::from_str(&user.role).unwrap_or(Role::User);
+        let role = Role::parse(&user.role).unwrap_or(Role::User);
         self.issue_tokens(user.id, &user.username, role, user.token_version)
     }
 

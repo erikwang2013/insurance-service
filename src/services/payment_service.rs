@@ -195,7 +195,7 @@ impl PaymentService {
             )
             .await
             .map_err(db_error)?;
-        Ok(rows.iter().map(|r| row_to_payment(r)).collect::<Result<Vec<_>>>()?)
+        rows.iter().map(row_to_payment).collect::<Result<Vec<_>>>()
     }
 }
 
