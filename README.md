@@ -17,9 +17,7 @@
 | HTTP 框架 | axum 0.8 + bee_rust（bee_router / bee_orm / 过滤器管线） |
 | 存储 | MySQL 8.4（业务库，表主键由应用层 idgen_rs snowflake 生成）· Redis / 内存缓存（会话）· OpenSearch（搜索，可选） |
 
-<p align="center">
-  <img src="docs/mascot.svg" width="120" height="120" alt="吉祥物霜霜——雪豹幼崽" />
-</p>
+![吉祥物霜霜——雪豹幼崽](docs/mascot.svg)
 
 ---
 
@@ -76,6 +74,8 @@ insurance-service/
 │   └── bee.toml               # bee_rust 管线配置
 ├── docs/                      # 文档与架构图
 │   ├── mascot.svg             # 吉祥物霜霜（雪豹幼崽，同步内嵌至 /favicon.svg）
+│   ├── pet-expressions/       # 宠物 12 种表情形态（include_str! 内嵌至 GET /pet/{slug}）
+│   ├── social-preview.png     # GitHub Social Preview（1280×630）
 │   ├── architecture.svg       # 系统架构图
 │   ├── features.svg           # 功能总览图
 │   ├── lifecycle.svg          # 请求生命周期图
@@ -91,6 +91,7 @@ insurance-service/
 │   ├── error.rs               # AppError（BadRequest / Unauthorized / NotFound / Business…）
 │   ├── response.rs            # 统一响应信封 ResponseEnvelope（{code, message, data}）
 │   ├── pages.rs               # 浏览器 HTML 面：落地页 + 错误页（Accept 协商 HTML/JSON）
+│   ├── pet.rs                 # 宠物表情形态：12 种 SVG 内嵌 + GET /pet/{slug}
 │   ├── templates/             # Tera 模板（渲染走 bee_template::TemplateEngine）
 │   │   ├── base.html          #   页面外壳（内联吉祥物 + 样式）
 │   │   ├── landing.html       #   GET / 落地页
@@ -216,6 +217,7 @@ cargo test           # 全部测试（单元 + 集成）
 | GET | `/` | 落地页（HTML，内联吉祥物霜霜；浏览器人工访问） |
 | GET | `/healthz` | 健康检查（响应含吉祥物 `mascot` 字段） |
 | GET | `/favicon.svg` | 吉祥物霜霜（内嵌 SVG，免静态目录） |
+| GET | `/pet/{slug}` | 项目宠物表情形态（12 种内嵌 SVG，slug 见下方表情表） |
 | — | 未匹配路径 | 浏览器（`Accept: text/html`）→ 吉祥物 404 页；其余 → JSON 信封 `40400` |
 | POST | `/api/v1/auth/register` | 注册（返回双令牌） |
 | POST | `/api/v1/auth/login` | 账号密码登录 |
@@ -260,7 +262,7 @@ cargo test           # 全部测试（单元 + 集成）
 
 | 微信支付 | 支付宝 |
 |----------|--------|
-| <img src="docs/weixinpay.png" width="130" height="130" alt="微信支付收款码"/> | <img src="docs/alipay.png" width="130" height="130" alt="支付宝收款码"/> |
+| ![微信支付收款码](docs/weixinpay.png) | ![支付宝收款码](docs/alipay.png) |
 
 打开对应 App 扫码即可；转账时欢迎备注昵称，感谢支持！
 
@@ -268,31 +270,29 @@ cargo test           # 全部测试（单元 + 集成）
 
 | 币种 | 主网 | 二维码 | 钱包地址 |
 |------|------|--------|----------|
-| BNB | BNB Smart Chain (BEP20) | <img src="docs/coin/1.jpg" width="130" height="130" alt="BNB Smart Chain (BEP20) 收款码"/> | `0x355d429f97511897ccb4e271ec888205f9ab6629` |
-| TRX | Tron (TRC20) | <img src="docs/coin/2.jpg" width="130" height="130" alt="Tron (TRC20) 收款码"/> | `TEdDHWLajt1XvqtPDWmQctdrJaC3pzZZzz` |
-| ETH | Ethereum (ERC20) | <img src="docs/coin/3.jpg" width="130" height="130" alt="Ethereum (ERC20) 收款码"/> | `0x355d429f97511897ccb4e271ec888205f9ab6629` |
-| APT | Aptos | <img src="docs/coin/4.jpg" width="130" height="130" alt="Aptos 收款码"/> | `0x836e3780edfc3f7b2372b39e2a1a3a5d7adfaccd96c726f21cfde1b50dd68030` |
-| — | Plasma | <img src="docs/coin/5.jpg" width="130" height="130" alt="Plasma 收款码"/> | `0x355d429f97511897ccb4e271ec888205f9ab6629` |
-| MATIC | Polygon POS | <img src="docs/coin/6.jpg" width="130" height="130" alt="Polygon POS 收款码"/> | `0x355d429f97511897ccb4e271ec888205f9ab6629` |
-| SOL | Solana | <img src="docs/coin/7.jpg" width="130" height="130" alt="Solana 收款码"/> | `2hfhboHdmdrYsY25XfQSsEWxq5ip4EQsR7f4AzSRMUyr` |
-| TON | The Open Network (TON) | <img src="docs/coin/8.jpg" width="130" height="130" alt="The Open Network (TON) 收款码"/> | `UQB9kFQohzmXUir9QSSZq01iwl9aQZIDdBpNmDklljRtCoGK` |
-| ARB | Arbitrum One | <img src="docs/coin/9.jpg" width="130" height="130" alt="Arbitrum One 收款码"/> | `0x355d429f97511897ccb4e271ec888205f9ab6629` |
-| AVAX | AVAX C-Chain | <img src="docs/coin/10.jpg" width="130" height="130" alt="AVAX C-Chain 收款码"/> | `0x355d429f97511897ccb4e271ec888205f9ab6629` |
+| BNB | BNB Smart Chain (BEP20) | ![BNB Smart Chain (BEP20) 收款码](docs/coin/1.jpg) | `0x355d429f97511897ccb4e271ec888205f9ab6629` |
+| TRX | Tron (TRC20) | ![Tron (TRC20) 收款码](docs/coin/2.jpg) | `TEdDHWLajt1XvqtPDWmQctdrJaC3pzZZzz` |
+| ETH | Ethereum (ERC20) | ![Ethereum (ERC20) 收款码](docs/coin/3.jpg) | `0x355d429f97511897ccb4e271ec888205f9ab6629` |
+| APT | Aptos | ![Aptos 收款码](docs/coin/4.jpg) | `0x836e3780edfc3f7b2372b39e2a1a3a5d7adfaccd96c726f21cfde1b50dd68030` |
+| — | Plasma | ![Plasma 收款码](docs/coin/5.jpg) | `0x355d429f97511897ccb4e271ec888205f9ab6629` |
+| MATIC | Polygon POS | ![Polygon POS 收款码](docs/coin/6.jpg) | `0x355d429f97511897ccb4e271ec888205f9ab6629` |
+| SOL | Solana | ![Solana 收款码](docs/coin/7.jpg) | `2hfhboHdmdrYsY25XfQSsEWxq5ip4EQsR7f4AzSRMUyr` |
+| TON | The Open Network (TON) | ![The Open Network (TON) 收款码](docs/coin/8.jpg) | `UQB9kFQohzmXUir9QSSZq01iwl9aQZIDdBpNmDklljRtCoGK` |
+| ARB | Arbitrum One | ![Arbitrum One 收款码](docs/coin/9.jpg) | `0x355d429f97511897ccb4e271ec888205f9ab6629` |
+| AVAX | AVAX C-Chain | ![AVAX C-Chain 收款码](docs/coin/10.jpg) | `0x355d429f97511897ccb4e271ec888205f9ab6629` |
 
 > 虚拟币打赏按 `docs/coin/1.jpg ~ 10.jpg` 顺序对应上方 10 条主网排列；如有出入请指出，即时更正。
 
-<!-- pet-expressions:start -->
 ## 项目宠物表情形态 · 霜霜
 
-<table align="center">
-<tr><td align="center"><img src="docs/pet-expressions/smile.svg" width="88" alt="笑"><br><b>笑</b><br><code>:emoji-smile:</code></td><td align="center"><img src="docs/pet-expressions/joy.svg" width="88" alt="欢乐"><br><b>欢乐</b><br><code>:emoji-joy:</code></td><td align="center"><img src="docs/pet-expressions/cry.svg" width="88" alt="哭"><br><b>哭</b><br><code>:emoji-cry:</code></td><td align="center"><img src="docs/pet-expressions/depressed.svg" width="88" alt="沮丧"><br><b>沮丧</b><br><code>:emoji-depressed:</code></td><td align="center"><img src="docs/pet-expressions/terrified.svg" width="88" alt="惊恐"><br><b>惊恐</b><br><code>:emoji-terrified:</code></td><td align="center"><img src="docs/pet-expressions/angry.svg" width="88" alt="愤怒"><br><b>愤怒</b><br><code>:emoji-angry:</code></td></tr>
-<tr><td align="center"><img src="docs/pet-expressions/coquettish.svg" width="88" alt="撒娇"><br><b>撒娇</b><br><code>:emoji-coquettish:</code></td><td align="center"><img src="docs/pet-expressions/cute.svg" width="88" alt="卖萌"><br><b>卖萌</b><br><code>:emoji-cute:</code></td><td align="center"><img src="docs/pet-expressions/pleasing.svg" width="88" alt="讨好"><br><b>讨好</b><br><code>:emoji-pleasing:</code></td><td align="center"><img src="docs/pet-expressions/knocking.svg" width="88" alt="敲打"><br><b>敲打</b><br><code>:emoji-knocking:</code></td><td align="center"><img src="docs/pet-expressions/facepalm.svg" width="88" alt="捂脸"><br><b>捂脸</b><br><code>:emoji-facepalm:</code></td><td align="center"><img src="docs/pet-expressions/tongue.svg" width="88" alt="吐舌头"><br><b>吐舌头</b><br><code>:emoji-tongue:</code></td></tr>
-</table>
+| 表情 | 表情 | 表情 | 表情 |
+|:---:|:---:|:---:|:---:|
+| ![笑](docs/pet-expressions/smile.svg) **笑** `:emoji-smile:` | ![欢乐](docs/pet-expressions/joy.svg) **欢乐** `:emoji-joy:` | ![哭](docs/pet-expressions/cry.svg) **哭** `:emoji-cry:` | ![沮丧](docs/pet-expressions/depressed.svg) **沮丧** `:emoji-depressed:` |
+| ![惊恐](docs/pet-expressions/terrified.svg) **惊恐** `:emoji-terrified:` | ![愤怒](docs/pet-expressions/angry.svg) **愤怒** `:emoji-angry:` | ![撒娇](docs/pet-expressions/coquettish.svg) **撒娇** `:emoji-coquettish:` | ![卖萌](docs/pet-expressions/cute.svg) **卖萌** `:emoji-cute:` |
+| ![讨好](docs/pet-expressions/pleasing.svg) **讨好** `:emoji-pleasing:` | ![敲打](docs/pet-expressions/knocking.svg) **敲打** `:emoji-knocking:` | ![捂脸](docs/pet-expressions/facepalm.svg) **捂脸** `:emoji-facepalm:` | ![吐舌头](docs/pet-expressions/tongue.svg) **吐舌头** `:emoji-tongue:` |
 
 > 12 种彩色动态形态：笑 / 欢乐 / 哭 / 沮丧 / 惊恐 / 愤怒 / 撒娇 / 卖萌 / 讨好 / 敲打 / 捂脸 / 吐舌头。每个 SVG 自带表情、情绪特效与整体动效，并遵循 `prefers-reduced-motion`。
-<!-- pet-expressions:end -->
 
-<!-- assets-license:start -->
 ## 视觉资产授权 / Visual Assets License
 
 本项目的项目宠物、图片、图标、表情（包括 `docs/pet-expressions/` 等目录下的
@@ -301,5 +301,4 @@ SVG / PNG）**不是开源资产**，版权归作者所有。未经书面许可�
 [ASSETS-LICENSE.md](ASSETS-LICENSE.md)。
 
 > 代码部分仍遵循仓库原有 `LICENSE`；第三方素材（如明确标注的 Go Gopher 等）仍遵循其原许可证。
-<!-- assets-license:end -->
 
