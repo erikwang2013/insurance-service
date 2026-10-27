@@ -6,7 +6,7 @@
 //! `pub admin: Arc<AdminController>` 与 `AdminController::new(db.clone())`、
 //! `pub admin_handler` 适配器；routes.rs `build_bee_router` 注册
 //! `POST /admin/products`、`POST /admin/products/{id}/status` 与
-//! `GET /admin/audit-logs`（对齐 route_table() 中 admin 条目）。
+//! `GET /admin/audit-logs`（对齐 admin 路由）。
 
 use async_trait::async_trait;
 use axum::http::StatusCode;
