@@ -267,9 +267,41 @@ cargo test           # 全部测试（单元 + 集成）
 | 浏览器展示面 | 纯 JSON，无 HTML | `GET /` 落地页、`/favicon.svg`、`/pet/{slug}`、HTML 错误页、吉祥物素材 |
 | 扩展数据模型 | 14 张表 | 19 张表：+ 产品分类 / 分类关系 / 被保人 / 合同签署方 / 搜索同步日志 |
 | 代码规模 | 56 个 Rust 源文件 / 7,059 行 | 74 个 / 8,616 行 |
-| 路由 | 40 条（38 业务） | 44 条（39 业务 + 浏览器面） |
+| 路由 | 39 条业务 + `/healthz` = 40 | 40 条业务（+`/admin/stats`）+ `/healthz` + 3 条浏览器路由 = 44 |
 | 控制器 / 模型 / 服务 | 11 / 13 / 10 | 12 / 18 / 11 |
-| 测试 | 以仓库 HEAD 为准 | 商业版 README 标注 26 单元 + 115 集成（以交付版本为准） |
+| 测试 | HEAD 23 个测试文件 / 115 个用例；当前工作区 `tests/` 为空 | 当前工作区 `tests/` 为空；README 标注 26 单元 + 115 集成（以交付版本为准） |
+
+### 多维度对比 / Multi-dimensional Comparison
+
+| 维度 | 开源版 | 商业版 |
+|------|--------|--------|
+| 功能覆盖 | 39 条业务路由 + `/healthz`；11 控制器 / 13 模型 / 10 服务 / 14 表；核心投保交易闭环 | 40 条业务路由（+ `/admin/stats`）+ 浏览器路由/静态站点；12 / 18 / 11 / 19；多 5 张扩展表 |
+| 安全防护 | JWT access/refresh + RBAC；固定窗口限流 300 次/60s/IP；security-rust 27 检测器扫描 path/query/body；trace_id；AES-256-GCM + argon2；validator；审计日志 | 安全中间件、限流、加密、校验源码与开源版一致；新增公开 HTML/宠物/favicon 面与运营统计接口（OPERATOR/ADMIN），暴露面略大 |
+| 性能与规模 | axum + tokio；mysql_async 连接池；进程内 MemoryCache；进程内固定窗口限流；无后台任务 | 运行时基本相同；配置新增 Redis/OpenSearch，但 AppState 仍用 MemoryCache，SyncWorker 仅定义未启动；多实例共享缓存/限流未落地 |
+| 数据与检索 | 14 表；搜索为 MySQL LIKE；无全文索引/同步 | 19 表（+产品分类/关系、被保人、合同签署方、搜索同步日志）；OpenSearch 同步 Worker 与 rust_scout 依赖为预留，SearchService 仍走 MySQL LIKE |
+| 测试与质量 | HEAD 有 23 个测试文件、115 个用例（18 `#[test]` + 97 `#[tokio::test]`）；当前工作区 `tests/` 为空（历史删除未提交）；无 CI 配置 | 当前工作区 `tests/` 为空；README 标注 26 单元 + 115 集成（含统计/索引路由），当前快照无法直接运行；无 CI 配置 |
+| 部署与运维 | 无 Dockerfile/compose/CI；`config/app.toml` + `bee.toml`、`install.sql`、`/healthz`、`scripts/release.sh`；单进程 | 同左；新增 Redis/OpenSearch 可选环境变量；仍无 compose、迁移 runner、CI |
+| 多端与国际化 | 纯 JSON API；无 HTML 面、无客户端源码、无 i18n | 增加 HTML 落地页、宠物表情、favicon、HTML 错误页与 `site/` 静态站；无 Flutter/小程序源码；无 i18n |
+| 扩展性与二次开发 | 仅微信 code2session provider；支付/电子签为内联 Mock；路由/控制器结构简单 | `PayProvider` / `ElectronicSignature` trait + 微信/易签/Mock 适配器；统计 service；搜索同步 Worker 预留；路由/控制器结构同源；无 OpenAPI 文件 |
+| 授权与商业支持 | 仅个人学习/研究，禁止商业使用；无商业支持 | 商业授权；交付与支持条款联系 **erik@erik.xyz** |
+| 适用场景 | 学习、研究、原型、二次开发；核心交易闭环足够 | 商业部署/交付；需要落地页、运营统计、支付/电子签扩展点；真实支付/电子签与 OpenSearch 仍需配置，部分模块为脚手架 |
+
+**English**
+
+| Dimension | Open edition | Commercial edition |
+|---|---|---|
+| Functional coverage | 39 business routes + `/healthz`; 11 controllers / 13 models / 10 services / 14 tables; core insurance transaction loop | 40 business routes (+ `/admin/stats`) + browser routes/static site; 12 / 18 / 11 / 19; 5 extra tables |
+| Security | JWT access/refresh + RBAC; fixed-window 300 req/60s/IP; security-rust 27 detectors over path/query/body; trace ID; AES-256-GCM + argon2; validator; audit logs | Same middleware, rate-limit, crypto and validation source; larger public HTML/pet/favicon surface plus stats endpoint (OPERATOR/ADMIN) |
+| Performance / scale | axum + tokio; mysql_async pool; in-process MemoryCache and rate limiter; no background jobs | Effectively the same runtime; Redis/OpenSearch config exists, but AppState still uses MemoryCache and SyncWorker is not spawned; no shared multi-instance cache/limit |
+| Data / search | 14 tables; MySQL LIKE search | 19 tables (+ product categories/relation, policy holder, contract signer, search sync log); OpenSearch sync Worker and rust_scout are scaffolding; SearchService still uses MySQL LIKE |
+| Tests / quality | HEAD: 23 test files / 115 cases (18 `#[test]` + 97 `#[tokio::test]`); working tree `tests/` empty; no CI | Working tree `tests/` empty; README claims 26 unit + 115 integration (including stats/index routes), not runnable in this snapshot; no CI |
+| Deployment / ops | No Dockerfile/compose/CI; app.toml + bee.toml, install.sql, `/healthz`, release.sh; single process | Same; adds optional Redis/OpenSearch env vars; still no compose, migration runner or CI |
+| Clients / i18n | JSON API only; no HTML surface, client source or i18n | Adds HTML landing/pet/favicon/error pages and `site/` static site; no Flutter/mini-program source; no i18n |
+| Extensibility | WeChat code2session provider only; inline mock payment/e-sign | `PayProvider` / `ElectronicSignature` traits + WeChat/Escqian/Mock adapters; stats service; search sync Worker scaffolding; same route/controller structure; no OpenAPI file |
+| License / support | Personal study/research only; commercial use prohibited | Commercial license; delivery/support terms via **erik@erik.xyz** |
+| Use cases | Learning, research, prototypes, secondary development; core transaction loop is sufficient | Commercial deployment/delivery needing landing page, ops stats and payment/e-sign extension points; real payment/e-sign and OpenSearch still require configuration, some modules are scaffolding |
+
+**商业版授权联系：erik@erik.xyz** / **Commercial licensing: erik@erik.xyz**
 
 ### 商业版独有能力
 
