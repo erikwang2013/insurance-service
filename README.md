@@ -255,7 +255,7 @@ cargo test           # 全部测试（单元 + 集成）
 
 ## 开源版 vs 商业版
 
-> 商业版代码位于 `open-project/insurance-service`，与开源版同源；商业版是当前开源版的严格超集（无开源版独有的文件、表或路由）。
+> 商业版由作者单独提供，与开源版同源；商业版是当前开源版的严格超集（无开源版独有的文件、表或路由）。
 
 | 维度 | 开源版 | 商业版 |
 |------|--------|--------|
@@ -286,7 +286,7 @@ cargo test           # 全部测试（单元 + 集成）
 
 **商业版授权与交付条款请联系：erik@erik.xyz**
 
-**English summary:** The open edition is for personal study and research and retains the core insurance transaction loop (auth/RBAC, products, quotes, orders, mock payment, policies, mock e-sign, claims, audit, MySQL LIKE search). The commercial edition in `open-project/insurance-service` is a strict superset: browser landing/mascot pages, external payment/e-sign provider layer, OpenSearch sync worker, admin ops stats, and product-category/policy-holder/contract-signer schema (19 tables vs 14). Commercial licensing and delivery: erik@erik.xyz.
+**English summary:** The open edition is for personal study and research and retains the core insurance transaction loop (auth/RBAC, products, quotes, orders, mock payment, policies, mock e-sign, claims, audit, MySQL LIKE search). The commercial edition is a strict superset: browser landing/mascot pages, external payment/e-sign provider layer, OpenSearch sync worker, admin ops stats, and product-category/policy-holder/contract-signer schema (19 tables vs 14). Commercial licensing and delivery: erik@erik.xyz.
 
 
 ## 项目授权 / Project License
