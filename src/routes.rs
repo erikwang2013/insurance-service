@@ -79,7 +79,7 @@ use bee_rust::bee_router::Router;
 
 use crate::controllers::{
     admin_handler, AppState, auth_handler, claim_handler, contract_handler, order_handler,
-    payment_handler, policy_handler, product_handler, quote_handler, search_handler, stats_handler,
+    payment_handler, policy_handler, product_handler, quote_handler, search_handler,
 };
 
 /// 对接 bee_router 的路由注册（bee-rust 已激活，见 Cargo.toml [workspace.dependencies] 注释）
@@ -138,8 +138,6 @@ pub fn build_bee_router(state: AppState) -> axum::Router {
                 // admin（运营后台：商品建档 / 上下架）
                 .post("/admin/products", admin_handler)
                 .post("/admin/products/{id}/status", admin_handler)
-                // admin/stats（运营统计，OPERATOR/ADMIN）
-                .post("/admin/stats", stats_handler)
                 // admin/audit-logs（审计查询，OPERATOR/ADMIN）
                 .get("/admin/audit-logs", admin_handler)
         })

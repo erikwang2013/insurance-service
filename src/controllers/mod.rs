@@ -16,7 +16,6 @@ pub mod policy;
 pub mod product;
 pub mod quote;
 pub mod search;
-pub mod stats;
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -57,7 +56,6 @@ pub use policy::PolicyController;
 pub use product::ProductController;
 pub use quote::QuoteController;
 pub use search::SearchController;
-pub use stats::StatsController;
 
 /// 会话 TTL（滚动刷新基准；后续按业务细分）
 const SESSION_TTL: Duration = Duration::from_secs(3600);
@@ -80,7 +78,6 @@ pub struct AppState {
     pub payment: Arc<PaymentController>,
     pub policy: Arc<PolicyController>,
     pub contract: Arc<ContractController>,
-    pub stats: Arc<StatsController>,
 }
 
 impl AppState {
@@ -110,7 +107,6 @@ impl AppState {
         let order = Arc::new(OrderController::new(OrderService::new(db.clone())));
         let payment = Arc::new(PaymentController::new(PaymentService::new(db.clone())));
         let policy = Arc::new(PolicyController::new(PolicyService::new(db.clone())));
-        let stats = Arc::new(StatsController::new(db.clone()));
         let contract = Arc::new(ContractController::new(ContractService::new(db)));
         // 限流默认：单 key（X-Forwarded-For，回退全局）60 秒 300 次，宽松防滥用；
         // 登录等敏感端点后续可单独收紧（按 key 维度隔离计数）
@@ -130,7 +126,6 @@ impl AppState {
             payment,
             policy,
             contract,
-            stats,
         })
     }
 
@@ -291,14 +286,6 @@ pub async fn contract_handler(
     request: Request<Body>,
 ) -> Response {
     state.run(state.contract.as_ref(), params, request).await
-}
-
-pub async fn stats_handler(
-    State(state): State<AppState>,
-    Path(params): Path<HashMap<String, String>>,
-    request: Request<Body>,
-) -> Response {
-    state.run(state.stats.as_ref(), params, request).await
 }
 
 pub async fn healthz_handler() -> Response {
