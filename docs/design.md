@@ -1,8 +1,7 @@
 # 保险服务平台 — 设计文档（本地摘要）
 
 > 本文档为**设计决策摘要与索引**，权威细节见 `docs/backend-architecture.md`（架构）与
-> `docs/db-schema.md`（19 表 Schema 与 Rust models）。设计正文不在此重复。
-> 版本: 2026-10-19（v1.10.0）。
+> `docs/db-schema.md`（14 表 Schema 与 Rust models）。版本: 2026-10-27（v1.10.0）。
 
 ---
 
@@ -11,7 +10,7 @@
 MVC 分层，过滤器链承载横切关注点：
 
 ```
-请求 → SecurityFilter → Trace → JWT认证(RBAC) → Controller → Service → Db / Provider → 统一信封
+请求 → SecurityFilter → Trace → JWT认证(RBAC) → Controller → Service → Db → 统一信封
 ```
 
 | 层 | 职责 |
@@ -20,10 +19,8 @@ MVC 分层，过滤器链承载横切关注点：
 | Controller | 参数提取 → 调用 Service → 组装响应（bee_router 分发） |
 | Service | 业务规则、事务边界 |
 | Model | bee_orm `#[derive(Model)]` 行 → 结构体 |
-| Pages（旁路） | 非 API 路径的浏览器 HTML 面：`GET /` 落地页 + 错误页（`src/pages.rs`，模板 `src/templates/*.html`） |
 
-浏览器 HTML 面与 API 面在路由层分岔：`/api/v1/*` 恒返回 JSON 信封，其余路径按 `Accept`
-协商（浏览器 → HTML，客户端 → JSON）。渲染走 `bee_template`（Tera，自动转义）。
+服务仅提供 JSON 接口：`/api/v1/*` 与未匹配路径均返回统一 JSON 信封，不提供 HTML 页面。
 
 ## 2. 关键设计决策
 
@@ -38,27 +35,23 @@ MVC 分层，过滤器链承载横切关注点：
 | 金额语义 | DECIMAL(14,2) 单位元，禁浮点；金额快照落库 | db-schema.md §1 |
 | 状态机 | status 字符串列 + 枚举校验显式流转，禁任意跳变 | db-schema.md §1 |
 | 软删除审计 | `deleted_at` + `audit_logs` 全量留痕 | db-schema.md §1 |
-| 搜索解耦 | 业务只写 MySQL；OpenSearch 经 `search_sync_logs` 异步最终一致同步；未就绪降级 LIKE | db-schema.md §9 |
+| 搜索 | MySQL `LIKE`（分页保护），无外部索引与异步同步 | src/services/search_service.rs |
+| 支付 / 签约 | 当前为内联 Mock 实现；微信 / 支付宝 / 易签等外部渠道未接入 | src/services/payment_service.rs · contract_service.rs |
 | 多端共用 | Flutter / 小程序 / 鸿蒙共用 REST API | backend-architecture.md §1 |
-| HTML 面边界 | 仅非 API 路径按 `Accept` 渲染 HTML（落地页 / 错误页）；`/api/v1/*` 恒为 JSON 信封，不受请求头影响 | src/pages.rs · backend-architecture.md §6.4 |
-| 吉祥物 | 霜霜（雪豹幼崽）：`docs/mascot.svg` ↔ 内嵌 `MASCOT_SVG` → `/favicon.svg`、启动横幅、`/healthz.mascot`、HTML 页；12 种表情形态经 `include_str!` 内嵌至 `GET /pet/{slug}` | src/pet.rs · src/routes.rs · src/templates/ |
 
-## 3. 外部 Provider 抽象
+## 3. 数据模型要点（14 表）
 
-- 支付：`PayProvider` 接口 + 微信支付 / 支付宝 / Mock（预下单 + 回调验签，回调幂等）。
-- 电子签：`ElectronicSignature` 接口 + 易签 / 法大大 / Mock（签署链接、签署回调、合同落库）。
-
-## 4. 数据模型要点（19 表）
-
-- users / insurance_products / clauses / quotes / orders / payments / policies（holder+beneficiary）/ contracts(+signer) / claims / audit_logs / search_sync_logs 等。
+- users / insurance_products / insurance_product_clauses / quotes / quotes_beneficiaries /
+  orders / payments / policies / policy_beneficiaries / contracts / claims / audit_logs /
+  claim_documents / quote_rates。
 - 投保人 / 被保人 / 受益人可不同；一张保单多受益人，`beneficiary_share` 合计 100%。
 - 主键由应用层 snowflake 生成（idgen_rs 0.2.0 无锁算法，`crate::utils::idgen::next_id()`，worker_id 取 `IDGEN_WORKER_ID` env，默认 0）；业务号（保单 O / 订单 P / 报价 Q / 理赔 CL）保留前缀独立生成并唯一索引。
 
-## 5. 文档导航
+## 4. 文档导航
 
 | 文档 | 职责 |
 |------|------|
-| `docs/backend-architecture.md` | 完整架构设计 + §13 Roadmap |
+| `docs/backend-architecture.md` | 完整架构设计 |
 | `docs/db-schema.md` | 库表 Schema 与 models 蓝本（install.sql 来源） |
 | `docs/plan.md` | 分阶段规划与里程碑 |
 | `docs/tasks.md` | 任务清单与完成判定 |

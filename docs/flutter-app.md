@@ -528,10 +528,7 @@ class BaseResponse<T> with _$BaseResponse<T> {
 }
 ```
 
-> **响应形态边界（v1.8.0）**：`/api/v1/*` 下**恒为**上述 JSON 信封——即便请求头声明
-> `Accept: text/html` 也不改写，客户端无需处理 HTML 响应。HTML 面仅存在于非 API 路径
-> （`GET /` 落地页、浏览器访问未匹配路径时的错误页）；调试时在浏览器中打开这些路径会看到
-> HTML，属预期行为。
+> **响应形态**：`/api/v1/*` 恒为 JSON 信封；即便请求头声明 `Accept: text/html` 也不改写，客户端无需处理 HTML 响应。
 
 ### 6.2 错误映射
 

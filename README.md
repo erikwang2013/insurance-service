@@ -3,7 +3,7 @@
 保险服务平台后端服务（Rust 版）。基于 `bee_rust`（bee 管线 + 路由 + ORM 骨架）、`axum`、`tokio`
 构建，目标覆盖保险业务从「商品展示 → 报价 → 订单 → 支付 → 保单 → 电子签约 → 理赔」的完整闭环。
 
-当前迭代处于 **阶段 0 → 1**：已落地**用户认证、保险商品、全文搜索、报价、理赔（含审核）**业务能力，并打通
+当前迭代处于 **阶段 0 → 1**：已落地**用户认证、保险商品、MySQL LIKE 搜索、报价、理赔（含审核）**业务能力，并打通
 **报价 → 订单 → 支付 → 保单 → 签约**交易闭环 API（支付 / 电子签当前为 Mock 渠道），并已提供**运营后台商品建档与上下架**接口。
 
 服务仅提供 JSON 接口；`/api/v1/*` 与其他路径的未匹配请求都返回统一 JSON 信封，不提供 HTML 页面。
@@ -11,10 +11,10 @@
 | 项目 | 值 |
 |------|-----|
 | 语言 / 版本 | Rust 2024 edition（rust-version ≥ 1.87） |
-| 许可证 | Apache-2.0 |
+| 许可证 | 仅供个人学习；商业使用需授权（详见「项目授权 / Project License」） |
 | 版本 | 1.10.0 |
 | HTTP 框架 | axum 0.8 + bee_rust（bee_router / bee_orm / 过滤器管线） |
-| 存储 | MySQL 8.4（业务库，表主键由应用层 idgen_rs snowflake 生成）· Redis / 内存缓存（会话）· OpenSearch（搜索，可选） |
+| 存储 | MySQL 8.4（业务库，表主键由应用层 idgen_rs snowflake 生成）· 内存缓存（限流 / 会话） |
 
 ---
 
@@ -30,11 +30,10 @@
   任一层拒绝即返回 `401 / 403` 统一信封，不进入业务层。
 - **Controller / Service**：auth / product / search / quote / order / payment / policy / contract / claim
   各业务 Controller 经 `bee_router` 分发；Service 为事务边界（`services/*_service.rs`）。
-- **外部 Provider**：微信支付 / 支付宝 / 易签电子签约 / Mock 适配层（规划路由）。
+- **支付与签约**：当前为内联 Mock 实现（微信 / 支付宝 / 易签等外部渠道未接入）。
 - **数据访问**：`Db`（mysql_async 连接池）——参数化查询防注入、写事务 `commit / rollback` 闭环、
   `bee_orm Model` 行 → 结构体映射。
-- **基础设施**：MySQL 8.4（`install.sql` 建库）、Redis 会话缓存（阶段 0 内存缓存暂代）、
-  OpenSearch 全文索引（rust-scout 门面，未就绪时降级 MySQL LIKE 搜索 + 同步 Worker）。
+- **基础设施**：MySQL 8.4（`install.sql` 建库）· 内存缓存与限流。
 
 ## 项目功能
 
@@ -44,9 +43,9 @@
   JWT 双令牌（access 短时效 + refresh 长时效，token_version 版本化——logout / 改密 / 换绑即吊销旧令牌）与 RBAC 角色（USER / AGENT / OPERATOR / ADMIN）。
 - **保险商品**：列表分页 / 状态过滤 / 精选位、详情、关联条款阅读，运营后台建档与上架 / 下架 / 停售（OPERATOR / ADMIN）。
 - **报价**：费率表驱动（`quote_rates` 按产品 / 保障期 / 保额区间定价，命中优先，未命中回退请求保费）。
-- **全文搜索**：当前 MySQL LIKE（带分页保护），规划 OpenSearch 索引 + 同步 Worker，未就绪自动降级。
+- **全文搜索**：MySQL LIKE（带分页保护）。
 - **交易闭环**：报价 → 订单 → 支付（预下单 / 支付 / 回调）API 已挂载；微信渠道当前为 Mock，真实渠道规划中。
-- **保单与契约**：保单列表 / 详情、受益人批改（`POLICY_ENDORSE` 审计留痕）、电子合同 Mock 签署与签署回调 API 已挂载；易签等外部电子签渠道规划中。
+- **保单与契约**：保单列表 / 详情、受益人批改（`POLICY_ENDORSE` 审计留痕）、电子合同内联 Mock 签署与签署回调 API 已挂载；外部电子签渠道未接入。
 - **理赔**：报案（`CLM` 单号，校验保单归属）、我的理赔列表、审核（APPROVE / REJECT，需 OPERATOR / ADMIN）、资料上传 / 列表（`claim_documents` 元数据）已实现。
 - **运营 / 审计**：运营后台 API、`audit_logs` 全量留痕 + 审计查询接口（`/api/v1/admin/audit-logs`，OPERATOR / ADMIN）。
 - **横切能力**：入站安全扫描、参数化查询、AES-256-GCM 敏感字段加密、令牌精确过期（leeway=0）、
@@ -67,7 +66,7 @@ insurance-service/
 ├── Cargo.toml                 # 工作区 / 依赖 / 发布配置
 ├── install.sql                # MySQL 建库脚本（全部业务表）
 ├── config/
-│   ├── app.toml               # 应用配置模板（server / database / redis / opensearch / jwt / crypto / log）
+│   ├── app.toml               # 应用配置模板（server / database / jwt / crypto / log）
 │   └── bee.toml               # bee_rust 管线配置
 ├── docs/                      # 文档与架构图
 │   ├── social-preview.png     # GitHub Social Preview（1280×630）
@@ -81,7 +80,7 @@ insurance-service/
 │   ├── main.rs                # 启动入口：init → 配置 → AppState → 路由 → serve
 │   ├── lib.rs                 # 库入口（集成测试依赖）
 │   ├── config.rs              # AppConfig：从环境变量 + config/app.toml 加载
-│   ├── routes.rs              # 数据驱动路由表（39 个业务端点）+ 已挂载 handler
+│   ├── routes.rs              # build_bee_router 路由表（38 个业务端点）
 │   ├── db.rs                  # mysql_async 连接池与查询 / 事务封装
 │   ├── error.rs               # AppError（BadRequest / Unauthorized / NotFound / Business…）
 │   ├── response.rs            # 统一响应信封 ResponseEnvelope（{code, message, data}）
@@ -97,7 +96,6 @@ insurance-service/
 │   │   ├── contract.rs        #   电子合同
 │   │   ├── claim.rs           #   理赔（报案 / 审核 / 资料）
 │   │   ├── admin.rs           #   运营后台（商品建档 / 上下架 / 审计查询）
-│   │   └── stats.rs           #   运营统计
 │   ├── middleware/
 │   │   ├── mod.rs             # Filter trait · RequestCtx
 │   │   ├── auth.rs            # JwtService · AuthFilter · RequireRoleFilter
@@ -108,24 +106,23 @@ insurance-service/
 │   │   ├── mod.rs
 │   │   ├── auth_service.rs    # 注册 / 登录 / 微信绑定 / 令牌吊销
 │   │   ├── product_service.rs # 商品列表 / 详情 / 精选
-│   │   ├── search_service.rs  # 搜索（LIKE 降级）
+│   │   ├── search_service.rs  # 搜索（MySQL LIKE）
 │   │   ├── quote_service.rs   # 报价（费率表驱动）
 │   │   ├── order_service.rs   # 订单
 │   │   ├── payment_service.rs # 支付（预下单 / 回调）
 │   │   ├── policy_service.rs  # 保单（续保 / 退保 / 批改）
 │   │   ├── contract_service.rs # 电子合同（Mock 签署）
 │   │   ├── claim_service.rs   # 理赔（报案 / 审核 / 资料）
-│   │   └── stats_service.rs   # 运营统计汇总
 │   ├── models/                # bee_orm Model（user / insurance_product / order / payment / policy / contract / claim…）
 │   ├── crypto/                # AES-256-GCM · Masker · argon2
-│   ├── providers/             # payment（wechat · mock）· esign（escqian · mock）· wechat（code2session）
-│   ├── search/                # searchable_impl · sync_worker
+│   ├── providers/             # wechat（code2session）
+│   ├── search/                # searchable_impl（搜索序列化）
 │   └── utils/                 # validator · id_generator · idgen（snowflake）
 └── tests/
     ├── common/mod.rs                # 测试共享设施（测试库连接 / JWT 配置 / 唯一值 / 清理）
     ├── auth_service_test.rs         # 注册 / 登录 / 微信 stub（6 项）
     ├── product_service_test.rs      # 商品增删改查 / 过滤 / 软删（5 项）
-    ├── search_service_test.rs       # 搜索命中 / 无果 / 分页 / 索引路由（4 项）
+    ├── search_service_test.rs       # 搜索命中 / 无果 / 分页（4 项）
     ├── quote_service_test.rs        # 报价试算 / 详情 / 鉴权（3 项）
     ├── security_test.rs             # JWT 校验 / 过期 / 角色 RBAC（18 项）
     ├── api_auth_test.rs             # API 层鉴权 E2E（8 项）
@@ -144,7 +141,6 @@ insurance-service/
     ├── c3_claim_docs_test.rs        # C3 理赔资料上传 / 列表（5 项）
     ├── c4_quote_rates_test.rs       # C4 费率表化报价（4 项）
     ├── c5_audit_query_test.rs       # C5 运营端审计日志查询（1 项）
-    └── ops_stats_test.rs            # 运营统计 API（1 项）
 ```
 
 ## 使用说明
@@ -153,7 +149,6 @@ insurance-service/
 
 - Rust toolchain ≥ 1.87（`cargo --version` 检查）
 - MySQL 8.4（可选，集成测试与正式运行需要）
-- Redis / OpenSearch（可选，阶段 0 未就绪会自动降级）
 
 ### 配置
 
@@ -163,8 +158,6 @@ insurance-service/
 |------|------|------|
 | `SERVER_HOST` / `SERVER_PORT` | 监听地址 | `0.0.0.0` / `8080` |
 | `DATABASE_URL` | MySQL 连接串（**必填**，如 `mysql://user:pass@127.0.0.1:3306/insurance_service`） | — |
-| `REDIS_URL` | Redis 会话缓存 | 缺省走内存缓存 |
-| `OPENSEARCH_URL` / `OPENSEARCH_INDEX_*` | 全文索引 | 缺省降级 LIKE |
 | `JWT_SECRET` / `JWT_ISSUER` | JWT 签名密钥 / 签发者 | — |
 | `JWT_ACCESS_EXPIRY` / `JWT_REFRESH_EXPIRY` | access / refresh 有效秒数 | `7200` / `604800` |
 | `CRYPTO_MASTER_KEY` | AES-256-GCM 主密钥（口令 / 敏感字段加密） | — |
@@ -192,9 +185,9 @@ cargo test           # 全部测试（单元 + 集成）
 ```
 
 - 集成测试需要可用的 MySQL（`DATABASE_URL` 且已执行 `install.sql`）；未配置时**不会自动跳过，而是失败**。
-  当前规模：单元 26 项（均不依赖 DB）+ 集成 115 项。集成测试覆盖：
+  测试规模以 `cargo test` 输出为准。集成测试覆盖：
   认证（微信绑定/未配置降级/令牌吊销）、API 鉴权 E2E、交易闭环（报价→订单→支付回调→保单签发）、
-  保单生命周期（续保/退保/受益人批改）、限流、用户中心（改密/换绑）、运营统计、费率报价、
+  保单生命周期（续保/退保/受益人批改）、限流、用户中心（改密/换绑）、费率报价、
   理赔（资料上传）、审计查询、商品、修复回归等；单元测试覆盖限流窗口、加解密与脱敏、
   身份证 / 手机号校验、snowflake 唯一性、微信响应解析、健康检查与统一 404 信封（均不依赖 DB）。
 - 按项目约定（CLAUDE.md）：代码变更后**先跑测试、再提交**。
@@ -232,11 +225,10 @@ cargo test           # 全部测试（单元 + 集成）
 | POST | `/api/v1/claims/{id}/review` | 理赔审核 APPROVE / REJECT（OPERATOR / ADMIN） |
 | POST · GET | `/api/v1/claims/{id}/documents` | 理赔资料上传 / 列表（归属校验） |
 | POST | `/api/v1/admin/products` · `/api/v1/admin/products/{id}/status` | 商品建档 / 上下架（OPERATOR / ADMIN） |
-| POST | `/api/v1/admin/stats` | 运营统计汇总（OPERATOR / ADMIN） |
 | GET | `/api/v1/admin/audit-logs` | 审计日志查询（OPERATOR / ADMIN，多条件过滤 + 分页） |
 
-完整路由表（共 39 个业务端点，含 `/user/me`、`/user/password`、`/user/phone`、运营后台 `/admin/*`）
-见 `src/routes.rs` `route_table()`；库表设计见 `docs/db-schema.md` 与 `install.sql`。
+完整路由表（共 38 个业务端点，含 `/user/me`、`/user/password`、`/user/phone`、运营后台 `/admin/*`）
+见 `src/routes.rs` `build_bee_router()`；库表设计见 `docs/db-schema.md` 与 `install.sql`。
 
 ---
 
@@ -252,23 +244,6 @@ cargo test           # 全部测试（单元 + 集成）
 
 打开对应 App 扫码即可；转账时欢迎备注昵称，感谢支持！
 
-### 虚拟币打赏
-
-| 币种 | 主网 | 二维码 | 钱包地址 |
-|------|------|--------|----------|
-| BNB | BNB Smart Chain (BEP20) | ![BNB Smart Chain (BEP20) 收款码](docs/coin/1.jpg) | `0x355d429f97511897ccb4e271ec888205f9ab6629` |
-| TRX | Tron (TRC20) | ![Tron (TRC20) 收款码](docs/coin/2.jpg) | `TEdDHWLajt1XvqtPDWmQctdrJaC3pzZZzz` |
-| ETH | Ethereum (ERC20) | ![Ethereum (ERC20) 收款码](docs/coin/3.jpg) | `0x355d429f97511897ccb4e271ec888205f9ab6629` |
-| APT | Aptos | ![Aptos 收款码](docs/coin/4.jpg) | `0x836e3780edfc3f7b2372b39e2a1a3a5d7adfaccd96c726f21cfde1b50dd68030` |
-| — | Plasma | ![Plasma 收款码](docs/coin/5.jpg) | `0x355d429f97511897ccb4e271ec888205f9ab6629` |
-| MATIC | Polygon POS | ![Polygon POS 收款码](docs/coin/6.jpg) | `0x355d429f97511897ccb4e271ec888205f9ab6629` |
-| SOL | Solana | ![Solana 收款码](docs/coin/7.jpg) | `2hfhboHdmdrYsY25XfQSsEWxq5ip4EQsR7f4AzSRMUyr` |
-| TON | The Open Network (TON) | ![The Open Network (TON) 收款码](docs/coin/8.jpg) | `UQB9kFQohzmXUir9QSSZq01iwl9aQZIDdBpNmDklljRtCoGK` |
-| ARB | Arbitrum One | ![Arbitrum One 收款码](docs/coin/9.jpg) | `0x355d429f97511897ccb4e271ec888205f9ab6629` |
-| AVAX | AVAX C-Chain | ![AVAX C-Chain 收款码](docs/coin/10.jpg) | `0x355d429f97511897ccb4e271ec888205f9ab6629` |
-
-> 虚拟币打赏按 `docs/coin/1.jpg ~ 10.jpg` 顺序对应上方 10 条主网排列；如有出入请指出，即时更正。
-
 ## 视觉资产授权 / Visual Assets License
 
 本项目的图片、图标（包括 `docs/` 下的 SVG / PNG）**不是开源资产**，版权归作者所有。
@@ -277,3 +252,15 @@ cargo test           # 全部测试（单元 + 集成）
 
 > 代码部分仍遵循仓库原有 `LICENSE`；第三方素材（如明确标注的 Go Gopher 等）仍遵循其原许可证。
 
+
+## 项目授权 / Project License
+
+Copyright (c) 2026 erik <erik@erik.xyz> — https://erik.xyz
+
+- 本项目仅供个人学习、研究使用。
+- 未经作者书面授权，禁止任何形式的商业使用（包括但不限于商业部署、付费服务、二次销售、SaaS 运营及以本项目为基础提供商业服务）。
+- 商业授权请联系 **erik@erik.xyz**。
+- 未经授权的商业使用，作者将在全球范围内依法追究法律责任，并保留终身追责的权利。
+- 第三方组件仍遵循其各自原有的许可证；视觉资产适用仓库内的 ASSETS-LICENSE.md（如适用）。
+
+**English:** This project is provided for personal study and research only. Commercial use of any kind requires prior written authorization from the author (erik@erik.xyz). Unauthorized commercial use will be pursued for legal liability worldwide, and the author reserves the right to pursue such liability for life. Third-party components remain under their original licenses; visual assets are governed by ASSETS-LICENSE.md where applicable.
