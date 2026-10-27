@@ -18,7 +18,6 @@ pub mod quote;
 pub mod search;
 
 use std::collections::HashMap;
-use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -84,10 +83,10 @@ impl AppState {
     /// 依据配置构建共享状态（失败时返回可读错误串）
     pub fn new(cfg: &AppConfig) -> Result<Self, String> {
         let cache: Arc<dyn Cache> = Arc::new(MemoryCache::new());
-        let template_dir: PathBuf =
-            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src/templates");
+        // bee_router Context requires a TemplateEngine; this service has no HTML surface,
+        // so point it at a directory with no `*.html` files.
         let templates = Arc::new(
-            TemplateEngine::new(&template_dir)
+            TemplateEngine::new(&std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src"))
                 .map_err(|e| format!("模板引擎初始化失败: {e}"))?,
         );
         let crypto = CryptoService::from_master_key_b64(&cfg.crypto.master_key)

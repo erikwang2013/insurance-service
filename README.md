@@ -6,8 +6,7 @@
 当前迭代处于 **阶段 0 → 1**：已落地**用户认证、保险商品、全文搜索、报价、理赔（含审核）**业务能力，并打通
 **报价 → 订单 → 支付 → 保单 → 签约**交易闭环 API（支付 / 电子签当前为 Mock 渠道），并已提供**运营后台商品建档与上下架**接口。
 
-除 `/api/v1/*` 的 JSON 接口外，另提供一层**面向浏览器人工访问的 HTML 面**：`GET /` 落地页与吉祥物主题错误页。
-`/api/v1/*` 下**始终**返回统一 JSON 信封——即便请求头声明 `Accept: text/html` 也不改写，保证三端 App 契约稳定。
+服务仅提供 JSON 接口；`/api/v1/*` 与其他路径的未匹配请求都返回统一 JSON 信封，不提供 HTML 页面。
 
 | 项目 | 值 |
 |------|-----|
@@ -16,8 +15,6 @@
 | 版本 | 1.10.0 |
 | HTTP 框架 | axum 0.8 + bee_rust（bee_router / bee_orm / 过滤器管线） |
 | 存储 | MySQL 8.4（业务库，表主键由应用层 idgen_rs snowflake 生成）· Redis / 内存缓存（会话）· OpenSearch（搜索，可选） |
-
-![吉祥物霜霜——雪豹幼崽](docs/mascot.svg)
 
 ---
 
@@ -73,8 +70,6 @@ insurance-service/
 │   ├── app.toml               # 应用配置模板（server / database / redis / opensearch / jwt / crypto / log）
 │   └── bee.toml               # bee_rust 管线配置
 ├── docs/                      # 文档与架构图
-│   ├── mascot.svg             # 吉祥物霜霜（雪豹幼崽，同步内嵌至 /favicon.svg）
-│   ├── pet-expressions/       # 宠物 12 种表情形态（include_str! 内嵌至 GET /pet/{slug}）
 │   ├── social-preview.png     # GitHub Social Preview（1280×630）
 │   ├── architecture.svg       # 系统架构图
 │   ├── features.svg           # 功能总览图
@@ -86,16 +81,10 @@ insurance-service/
 │   ├── main.rs                # 启动入口：init → 配置 → AppState → 路由 → serve
 │   ├── lib.rs                 # 库入口（集成测试依赖）
 │   ├── config.rs              # AppConfig：从环境变量 + config/app.toml 加载
-│   ├── routes.rs              # 数据驱动路由表（39 个业务端点）+ 已挂载 handler + 吉祥物
+│   ├── routes.rs              # 数据驱动路由表（39 个业务端点）+ 已挂载 handler
 │   ├── db.rs                  # mysql_async 连接池与查询 / 事务封装
 │   ├── error.rs               # AppError（BadRequest / Unauthorized / NotFound / Business…）
 │   ├── response.rs            # 统一响应信封 ResponseEnvelope（{code, message, data}）
-│   ├── pages.rs               # 浏览器 HTML 面：落地页 + 错误页（Accept 协商 HTML/JSON）
-│   ├── pet.rs                 # 宠物表情形态：12 种 SVG 内嵌 + GET /pet/{slug}
-│   ├── templates/             # Tera 模板（渲染走 bee_template::TemplateEngine）
-│   │   ├── base.html          #   页面外壳（内联吉祥物 + 样式）
-│   │   ├── landing.html       #   GET / 落地页
-│   │   └── error.html         #   错误页（回显请求路径，自动转义防 XSS）
 │   ├── controllers/           # 各业务 Controller（经 AppState 注入）
 │   │   ├── mod.rs             #   AppState · bee 管线 run() · 统一信封
 │   │   ├── auth.rs            #   认证 / 用户中心
@@ -207,18 +196,15 @@ cargo test           # 全部测试（单元 + 集成）
   认证（微信绑定/未配置降级/令牌吊销）、API 鉴权 E2E、交易闭环（报价→订单→支付回调→保单签发）、
   保单生命周期（续保/退保/受益人批改）、限流、用户中心（改密/换绑）、运营统计、费率报价、
   理赔（资料上传）、审计查询、商品、修复回归等；单元测试覆盖限流窗口、加解密与脱敏、
-  身份证 / 手机号校验、snowflake 唯一性、微信响应解析、吉祥物 SVG 自检、宠物表情与 `/pet/{slug}`、页面渲染与 Accept 协商（均不依赖 DB）。
+  身份证 / 手机号校验、snowflake 唯一性、微信响应解析、健康检查与统一 404 信封（均不依赖 DB）。
 - 按项目约定（CLAUDE.md）：代码变更后**先跑测试、再提交**。
 
 ### 已实现 API 概览（阶段 0 → 1）
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| GET | `/` | 落地页（HTML，内联吉祥物霜霜；浏览器人工访问） |
-| GET | `/healthz` | 健康检查（响应含吉祥物 `mascot` 字段） |
-| GET | `/favicon.svg` | 吉祥物霜霜（内嵌 SVG，免静态目录） |
-| GET | `/pet/{slug}` | 项目宠物表情形态（12 种内嵌 SVG，slug 见下方表情表） |
-| — | 未匹配路径 | 浏览器（`Accept: text/html`）→ 吉祥物 404 页；其余 → JSON 信封 `40400` |
+| GET | `/healthz` | 健康检查（JSON 信封） |
+| — | 未匹配路径 | 统一返回 JSON 信封 `40400` |
 | POST | `/api/v1/auth/register` | 注册（返回双令牌） |
 | POST | `/api/v1/auth/login` | 账号密码登录 |
 | POST | `/api/v1/auth/wechat/login` | 微信登录（code2session 校验，按 openid 直登；未绑定提示；未配置凭据降级报错） |
@@ -283,22 +269,11 @@ cargo test           # 全部测试（单元 + 集成）
 
 > 虚拟币打赏按 `docs/coin/1.jpg ~ 10.jpg` 顺序对应上方 10 条主网排列；如有出入请指出，即时更正。
 
-## 项目宠物表情形态 · 霜霜
-
-| 表情 | 表情 | 表情 | 表情 |
-|:---:|:---:|:---:|:---:|
-| ![笑](docs/pet-expressions/smile.svg) **笑** `:emoji-smile:` | ![欢乐](docs/pet-expressions/joy.svg) **欢乐** `:emoji-joy:` | ![哭](docs/pet-expressions/cry.svg) **哭** `:emoji-cry:` | ![沮丧](docs/pet-expressions/depressed.svg) **沮丧** `:emoji-depressed:` |
-| ![惊恐](docs/pet-expressions/terrified.svg) **惊恐** `:emoji-terrified:` | ![愤怒](docs/pet-expressions/angry.svg) **愤怒** `:emoji-angry:` | ![撒娇](docs/pet-expressions/coquettish.svg) **撒娇** `:emoji-coquettish:` | ![卖萌](docs/pet-expressions/cute.svg) **卖萌** `:emoji-cute:` |
-| ![讨好](docs/pet-expressions/pleasing.svg) **讨好** `:emoji-pleasing:` | ![敲打](docs/pet-expressions/knocking.svg) **敲打** `:emoji-knocking:` | ![捂脸](docs/pet-expressions/facepalm.svg) **捂脸** `:emoji-facepalm:` | ![吐舌头](docs/pet-expressions/tongue.svg) **吐舌头** `:emoji-tongue:` |
-
-> 12 种彩色动态形态：笑 / 欢乐 / 哭 / 沮丧 / 惊恐 / 愤怒 / 撒娇 / 卖萌 / 讨好 / 敲打 / 捂脸 / 吐舌头。每个 SVG 自带表情、情绪特效与整体动效，并遵循 `prefers-reduced-motion`。
-
 ## 视觉资产授权 / Visual Assets License
 
-本项目的项目宠物、图片、图标、表情（包括 `docs/pet-expressions/` 等目录下的
-SVG / PNG）**不是开源资产**，版权归作者所有。未经书面许可不得复制、修改、再分发或
-用于商业用途；商业使用需取得商业授权，联系 **erik@erik.xyz**。详见
-[ASSETS-LICENSE.md](ASSETS-LICENSE.md)。
+本项目的图片、图标（包括 `docs/` 下的 SVG / PNG）**不是开源资产**，版权归作者所有。
+未经书面许可不得复制、修改、再分发或用于商业用途；商业使用需取得商业授权，联系
+**erik@erik.xyz**。详见 [ASSETS-LICENSE.md](ASSETS-LICENSE.md)。
 
 > 代码部分仍遵循仓库原有 `LICENSE`；第三方素材（如明确标注的 Go Gopher 等）仍遵循其原许可证。
 
