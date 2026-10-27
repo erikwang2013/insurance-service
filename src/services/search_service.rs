@@ -1,11 +1,7 @@
 //! 搜索门面 SearchService（对齐 backend-architecture.md §10.1）
 //!
-//! 业务 Controller 通过 SearchService 访问搜索，不直接接触 rust-scout 底层。
-//!
-//! 说明：规划文档引用 `rust_scout::{Engine, EngineManager, ScoutConfig, SearchBuilder}`。
-//! crates.io 当前可见最新为 0.1.0，且 OpenSearch 未运行（Cargo.toml 注释说明）。阶段 0
-//! 以「降级实现」提供可用搜索：引擎不可用时回退 MySQL 模糊检索（LIKE），返回与规划
-//! 一致的 `SearchResult` 结构；依赖可用后再在 `search()` 内替换为 rust-scout 引擎调用。
+//! 业务 Controller 通过 SearchService 访问搜索。当前实现为 MySQL 模糊检索（LIKE），
+//! 返回与规划一致的 `SearchResult` 结构。
 
 use mysql_async::prelude::FromRow;
 use mysql_async::Row;

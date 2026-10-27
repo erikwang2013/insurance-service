@@ -19,20 +19,6 @@ pub struct DbConfig {
     pub url: String,
 }
 
-/// Redis 配置
-#[derive(Debug, Clone, Deserialize)]
-pub struct RedisConfig {
-    pub url: String,
-}
-
-/// OpenSearch 搜索配置
-#[derive(Debug, Clone, Deserialize)]
-pub struct SearchConfig {
-    pub url: String,
-    pub username: String,
-    pub password: String,
-}
-
 /// JWT 配置
 #[derive(Debug, Clone, Deserialize)]
 pub struct JwtConfig {
@@ -72,8 +58,6 @@ pub struct WechatConfig {
 pub struct AppConfig {
     pub server: ServerConfig,
     pub database: DbConfig,
-    pub redis: RedisConfig,
-    pub opensearch: SearchConfig,
     pub jwt: JwtConfig,
     pub crypto: CryptoConfig,
     pub log: LogConfig,
@@ -93,14 +77,6 @@ impl AppConfig {
         };
         let database = DbConfig {
             url: env_required("DATABASE_URL")?,
-        };
-        let redis = RedisConfig {
-            url: env_or("REDIS_URL", "redis://127.0.0.1:6379"),
-        };
-        let opensearch = SearchConfig {
-            url: env_or("OPENSEARCH_URL", "http://127.0.0.1:9200"),
-            username: env_or("OPENSEARCH_USERNAME", "admin"),
-            password: env_or("OPENSEARCH_PASSWORD", "changeme"),
         };
         let jwt = JwtConfig {
             secret: env_or("JWT_SECRET", "change-me-to-a-long-random-string"),
@@ -125,8 +101,6 @@ impl AppConfig {
         Ok(AppConfig {
             server,
             database,
-            redis,
-            opensearch,
             jwt,
             crypto,
             log,

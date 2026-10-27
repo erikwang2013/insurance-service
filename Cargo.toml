@@ -37,9 +37,6 @@ idgen_rs = "0.2"
 #   bee_rust = { git = "https://github.com/erikwang2013/bee-rust", features = ["full"] }
 bee_rust = { path = "/home/erik/vendor/bee-rust/crates/bee_rust", features = ["full"] }
 
-# rust-scout 全文搜索门面（OpenSearch 走 elasticsearch feature）
-rust_scout = { version = "0.3", features = ["elasticsearch"] }
-
 # security-rust 已被 bee_rust 间接引用，此处显式声明便于直接使用 Scanner
 # 注：crates.io 包名为 `security-rust`（连字符），代码中 import 为 `security_rust`（下划线）
 security-rust = "1"
@@ -60,8 +57,6 @@ license = "Apache-2.0"
 
 # 特性说明：
 # - `bee_rust` 已于 2026-09-01 激活（本地 path 暂代 git，见 [workspace.dependencies] 注释）。
-# - `rust_scout` 仍在 workspace.dependencies 中声明但暂不激活：crates.io 最新为 0.1.0
-#   （文档写 0.3），且 OpenSearch 未运行，见 docs/backend-architecture.md §10。
 # - 业务模块（models/services/providers/crypto/search/middleware）采用标准 struct + 本地
 #   抽象实现，不依赖 bee_* crate，因此默认构建可完整编译。
 

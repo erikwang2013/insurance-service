@@ -26,7 +26,6 @@ pub mod policy_beneficiary;
 pub mod policy_holder;
 pub mod quote;
 pub mod quote_beneficiary;
-pub mod search_sync_log;
 pub mod user;
 
 pub use audit_log::AuditLog;
@@ -44,5 +43,4 @@ pub use policy_beneficiary::PolicyBeneficiary;
 pub use policy_holder::PolicyHolder;
 pub use quote::Quote;
 pub use quote_beneficiary::QuoteBeneficiary;
-pub use search_sync_log::SearchSyncLog;
 pub use user::User;

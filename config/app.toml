@@ -8,14 +8,6 @@ port = 8080
 [database]
 url = "${DATABASE_URL}"
 
-[redis]
-url = "${REDIS_URL}"
-
-[opensearch]
-url = "${OPENSEARCH_URL}"
-username = "${OPENSEARCH_USERNAME}"
-password = "${OPENSEARCH_PASSWORD}"
-
 [jwt]
 secret = "${JWT_SECRET}"
 issuer = "${JWT_ISSUER}"

@@ -412,27 +412,6 @@ CREATE TABLE claims (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ============================================================
--- 16. search_sync_logs DB→OpenSearch 同步队列
--- ============================================================
-CREATE TABLE search_sync_logs (
-  id            BIGINT UNSIGNED NOT NULL PRIMARY KEY, -- snowflake 主键,应用层 idgen_rs 生成
-  entity_type   VARCHAR(32)   NOT NULL,   -- PRODUCT / CLAUSE / POLICY
-  entity_id     BIGINT UNSIGNED NOT NULL, -- 业务实体主键
-  op            VARCHAR(16)   NOT NULL,   -- UPSERT / DELETE
-  status        VARCHAR(16)   NOT NULL DEFAULT 'PENDING',
-  attempts      INT           NOT NULL DEFAULT 0,  -- 已重试次数
-  max_attempts  INT           NOT NULL DEFAULT 5,
-  next_retry_at DATETIME(3)   NULL,               -- 下次重试时间(指数退避)
-  last_error    VARCHAR(512)  NULL,               -- 最近一次失败原因
-  payload_json  JSON          NULL,               -- 待写入索引文档快照(幂等重放)
-  created_at    DATETIME(3)   NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
-  updated_at    DATETIME(3)   NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
-  processed_at  DATETIME(3)   NULL,
-  KEY idx_synclog_status (status, next_retry_at),  -- 扫描待处理任务
-  KEY idx_synclog_entity (entity_type, entity_id)  -- 幂等去重/重放
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- ============================================================
 -- 17. audit_logs 操作审计
 -- ============================================================
 CREATE TABLE audit_logs (

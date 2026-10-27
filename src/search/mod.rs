@@ -1,12 +1,9 @@
-//! rust-scout 搜索集成（对齐 backend-architecture.md §10 / db-schema.md §7）
+//! 搜索集成（对齐 backend-architecture.md §10 / db-schema.md §7）
 //!
-//! 说明：规划文档引用 `rust_scout`（0.3, features=["elasticsearch"]）。crates.io 当前
-//! 可见最新为 0.1.0，且底层 Engine API 与文档描述可能有出入。为阶段 0 骨架可编译，
-//! 此处定义与文档一致的 `Searchable` trait（§7.2），并以 `SearchService` 门面封装；
-//! rust-scout 实际引擎注入在依赖可拉取后于 `services/search_service.rs` 内完成。
+//! 当前搜索由 `services/search_service.rs` 以 MySQL LIKE 实现；此处只保留
+//! `Searchable` trait（§7.2）与实体序列化。
 
 pub mod searchable_impl;
-pub mod sync_worker;
 
 /// 搜索操作类型（对齐 db-schema.md §7.2）
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
