@@ -24,7 +24,7 @@
 
 ## 1. 总体设计原则
 
-1. **业务真实落地**:投保人 / 被保人 / 受益人三者可各不相同;一张保单可有**多个受益人**,各占比例合计 100%(`beneficiary_share`);被保人可独立于投保账户存在(`policy_holders` 表),以支持"为他人投保"。
+1. **业务真实落地**:投保人 / 被保人 / 受益人三者可各不相同;一张保单可有**多个受益人**,各占比例合计 100%(`beneficiary_share`);被保人信息以字段形式内联在报价/保单中。
 2. **状态机显式化**:订单 / 保单 / 合同 / 支付 / 理赔均以 `status` 字符串列承载,业务逻辑用枚举常量校验合法流转,禁止任意跳变。
 3. **金额语义**:保费、支付金额一律用 `DECIMAL(14,2)`,单位为**元**,禁止浮点。金额快照落库(订单价、报价、保单保费各自独立),不实时反查产品费率。
 4. **软删除与审计**:核心业务表保留 `deleted_at`(软删除)+ `audit_logs` 全量操作审计。
@@ -40,11 +40,8 @@
 users 1──N insurance_products(产品运营/销售方)
 users 1──N orders(下单人)
 users 1──N quotes(投保请求发起人)
-policy_holders 1──N quotes(被保人)
 
 insurance_products 1──N insurance_product_clauses(条款)
-insurance_products 1──N insurance_product_category_rel(分类多对多)
-insurance_product_categories(类目表,parent_id 自关联树)
 
 insurance_products 1──N quotes
 quotes 1──N quotes_beneficiaries(报价期受益人快照)
@@ -54,7 +51,6 @@ orders 1──N policies(一单可拆多张保单)
 
 policies 1──N policy_beneficiaries(受益人+占比)
 policies 1──1 contracts(主合同,可扩展 1──N)
-contracts 1──N contract_signers(签署方)
 
 orders 1──N claims(理赔挂订单/保单)
 policies 1──N claims
@@ -73,24 +69,20 @@ insurance_products 1──N quote_rates(费率:整期保费=保额×rate)
 | # | 表名 | 说明 | 关联主实体 |
 |---|------|------|-----------|
 | 1 | `users` | 用户 / 账户(投保人账户) | — |
-| 2 | `policy_holders` | 被保人档案(可独立于用户) | users |
-| 3 | `insurance_products` | 保险产品 | users |
-| 4 | `insurance_product_clauses` | 产品条款 | products |
-| 5 | `insurance_product_categories` | 产品分类(树) | — |
-| 6 | `insurance_product_category_rel` | 产品-分类多对多 | products, categories |
-| 7 | `quotes` | 报价 / 投保方案 | products, users, holders |
-| 8 | `quotes_beneficiaries` | 报价期受益人快照 | quotes |
-| 9 | `orders` | 订单 | quotes, users |
-| 10 | `payments` | 支付流水 | orders |
-| 11 | `policies` | 保单 | orders |
-| 12 | `policy_beneficiaries` | 保单受益人(占比) | policies |
-| 13 | `contracts` | 电子合同 | policies |
-| 14 | `contract_signers` | 合同签署方 | contracts, users |
-| 15 | `claims` | 理赔 | orders, policies |
-| 16 | `search_sync_logs` | DB→OpenSearch 同步队列 | — |
-| 17 | `audit_logs` | 操作审计 | — |
-| 18 | `claim_documents` | 理赔资料(文件索引) | claims |
-| 19 | `quote_rates` | 报价费率表(整期保费=保额×rate) | insurance_products |
+| 2 | `insurance_products` | 保险产品 | users |
+| 3 | `insurance_product_clauses` | 产品条款 | products |
+| 4 | `quotes` | 报价 / 投保方案 | products, users |
+| 5 | `quotes_beneficiaries` | 报价期受益人快照 | quotes |
+| 6 | `orders` | 订单 | quotes, users |
+| 7 | `payments` | 支付流水 | orders |
+| 8 | `policies` | 保单 | orders |
+| 9 | `policy_beneficiaries` | 保单受益人(占比) | policies |
+| 10 | `contracts` | 电子合同 | policies |
+| 11 | `claims` | 理赔 | orders, policies |
+| 12 | `search_sync_logs` | DB→OpenSearch 同步队列 | — |
+| 13 | `audit_logs` | 操作审计 | — |
+| 14 | `claim_documents` | 理赔资料(文件索引) | claims |
+| 15 | `quote_rates` | 报价费率表(整期保费=保额×rate) | insurance_products |
 
 ---
 
@@ -138,29 +130,6 @@ CREATE TABLE users (
 ```
 
 ```sql
--- ============================================================
--- 2. policy_holders 被保人档案
--- ============================================================
-CREATE TABLE policy_holders (
-  id            BIGINT UNSIGNED NOT NULL PRIMARY KEY, -- snowflake 主键,应用层 idgen_rs 生成
-  user_id       BIGINT UNSIGNED NULL,        -- 关联投保人账户;为他人投保时为 NULL
-  name          VARCHAR(64)   NOT NULL,      -- 被保人姓名
-  id_card_enc   VARBINARY(1024) NULL,        -- 身份证密文
-  id_type       VARCHAR(32)   NOT NULL DEFAULT 'ID_CARD', -- ID_CARD/PASSPORT/OTHER
-  gender        VARCHAR(16)   NULL,          -- MALE / FEMALE / UNKNOWN
-  birthday      DATE          NULL,
-  phone_enc     VARBINARY(512) NULL,         -- 手机号密文
-  email         VARCHAR(128)  NULL,
-  address       VARCHAR(255)  NULL,
-  relationship  VARCHAR(32)   NULL,          -- 与投保人关系 SELF/SPOUSE/CHILD/PARENT/OTHER
-  status        VARCHAR(32)   NOT NULL DEFAULT 'ACTIVE', -- ACTIVE / DELETED
-  created_at    DATETIME(3)   NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
-  updated_at    DATETIME(3)   NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
-  deleted_at    DATETIME(3)   NULL,
-  KEY idx_holder_user (user_id),
-  KEY idx_holder_name (name)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
 -- ============================================================
 -- 3. insurance_products 保险产品
 -- ============================================================
@@ -218,38 +187,6 @@ CREATE TABLE insurance_product_clauses (
     REFERENCES insurance_products (id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- ============================================================
--- 5. insurance_product_categories 产品分类(树)
--- ============================================================
-CREATE TABLE insurance_product_categories (
-  id          BIGINT UNSIGNED NOT NULL PRIMARY KEY, -- snowflake 主键,应用层 idgen_rs 生成
-  parent_id   BIGINT UNSIGNED NULL,     -- 父分类,根为 NULL
-  name        VARCHAR(64)   NOT NULL,
-  slug        VARCHAR(64)   NOT NULL,
-  sort_order  INT           NOT NULL DEFAULT 0,
-  status      VARCHAR(32)   NOT NULL DEFAULT 'ACTIVE', -- ACTIVE / HIDDEN
-  created_at  DATETIME(3)   NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
-  updated_at  DATETIME(3)   NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
-  deleted_at  DATETIME(3)   NULL,
-  UNIQUE KEY uk_category_slug (slug),
-  KEY idx_category_parent (parent_id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- ============================================================
--- 6. insurance_product_category_rel 产品-分类(多对多)
--- ============================================================
-CREATE TABLE insurance_product_category_rel (
-  id          BIGINT UNSIGNED NOT NULL PRIMARY KEY, -- snowflake 主键,应用层 idgen_rs 生成
-  product_id  BIGINT UNSIGNED NOT NULL,
-  category_id BIGINT UNSIGNED NOT NULL,
-  created_at  DATETIME(3)   NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
-  UNIQUE KEY uk_prod_cat (product_id, category_id),
-  KEY idx_cat_rel_category (category_id),
-  CONSTRAINT fk_catrel_product FOREIGN KEY (product_id)
-    REFERENCES insurance_products (id) ON DELETE CASCADE,
-  CONSTRAINT fk_catrel_category FOREIGN KEY (category_id)
-    REFERENCES insurance_product_categories (id) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 ```
 
 ```sql
@@ -286,9 +223,7 @@ CREATE TABLE quotes (
   CONSTRAINT fk_quote_product FOREIGN KEY (product_id)
     REFERENCES insurance_products (id),
   CONSTRAINT fk_quote_user FOREIGN KEY (user_id)
-    REFERENCES users (id),
-  CONSTRAINT fk_quote_holder FOREIGN KEY (holder_id)
-    REFERENCES policy_holders (id)
+    REFERENCES users (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ============================================================
@@ -471,32 +406,6 @@ CREATE TABLE contracts (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ============================================================
--- 14. contract_signers 合同签署方
--- ============================================================
-CREATE TABLE contract_signers (
-  id            BIGINT UNSIGNED NOT NULL PRIMARY KEY, -- snowflake 主键,应用层 idgen_rs 生成
-  contract_id   BIGINT UNSIGNED NOT NULL,
-  user_id       BIGINT UNSIGNED NULL,               -- 登录用户签署
-  name          VARCHAR(64)   NOT NULL,             -- 签署人姓名
-  signer_type   VARCHAR(32)   NOT NULL DEFAULT 'APPLICANT', -- APPLICANT/INSURED/BENEFICIARY/WITNESS
-  sign_order    INT           NOT NULL DEFAULT 0,   -- 签署顺序
-  status        VARCHAR(32)   NOT NULL DEFAULT 'PENDING',
-  -- 状态机: PENDING → SIGNING → SIGNED → COMPLETED
-  --              └→ REJECTED / ABANDONED
-  sign_url      VARCHAR(512)  NULL,                 -- 签署链接(电子签平台)
-  sign_token    VARCHAR(128)  NULL,                 -- 签署凭证
-  signed_at     DATETIME(3)   NULL,
-  sign_detail   JSON          NULL,                 -- 签署环境/IP/时间/落款坐标
-  created_at    DATETIME(3)   NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
-  updated_at    DATETIME(3)   NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
-  KEY idx_csign_contract (contract_id),
-  KEY idx_csign_user (user_id),
-  KEY idx_csign_status (status),
-  CONSTRAINT fk_csign_contract FOREIGN KEY (contract_id)
-    REFERENCES contracts (id) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- ============================================================
 -- 15. claims 理赔
 -- ============================================================
 CREATE TABLE claims (
@@ -624,12 +533,6 @@ CREATE TABLE quote_rates (
 - **索引**:`uk_username`、`uk_openid`、`idx_phone_masked`。
 - **状态机** `status`: `ACTIVE → DISABLED / FROZEN`。
 
-### 5.2 policy_holders — 被保人档案
-
-- **作用**:支持"为他人投保"与"同一人多次投保"复用档案;`user_id` 可空。
-- **字段**:`name`、`id_card_enc`、`id_type`、`gender`、`birthday`、`relationship`。
-- **索引**:`idx_holder_user`、`idx_holder_name`。
-
 ### 5.3 insurance_products — 保险产品
 
 - **字段**:`product_code`(唯一)、`product_type`、`sale_channel`(销售渠道)、`operator_user_id`、`insurer_name`、保额/期限区间、`is_featured`、`status`、`search_enabled`。
@@ -641,15 +544,6 @@ CREATE TABLE quote_rates (
 - **字段**:`product_id`(FK→products)、`clause_type`、`title`、`content`(LONGTEXT)、`version`、`is_required`。
 - **索引**:`idx_clause_product`、`idx_clause_type`;FK `ON DELETE CASCADE`。
 - **状态机** `status`: `ACTIVE / DEPRECATED`。
-
-### 5.5 insurance_product_categories — 分类树
-
-- `parent_id` 自关联形成树;`slug` 唯一(URL 友好)。
-- **状态机** `status`: `ACTIVE / HIDDEN`。
-
-### 5.6 insurance_product_category_rel — 多对多
-
-- 复合唯一 `uk_prod_cat(product_id, category_id)`,两级 FK CASCADE。
 
 ### 5.7 quotes — 报价
 
@@ -720,12 +614,6 @@ CREATE TABLE quote_rates (
      ▼         ▼          ▼
     VOID     EXPIRED    REJECTED
   ```
-
-### 5.14 contract_signers — 合同签署方
-
-- **字段**:`contract_id`、`user_id`(可空)、`signer_type`(投保人/被保人/受益人/见证人)、`sign_order`、`sign_url`、`sign_token`、`status`、`sign_detail`。
-- **索引**:contract/user/status;FK CASCADE。
-- **状态机** `status`: `PENDING → SIGNING → SIGNED → COMPLETED` / `REJECTED / ABANDONED`。
 
 ### 5.15 claims — 理赔
 
@@ -829,41 +717,6 @@ impl User {
 }
 
 // ============================================================
-// 2. policy_holders
-// ============================================================
-#[derive(Model, Debug, Clone, Serialize, Deserialize)]
-pub struct PolicyHolder {
-    #[orm(primary_key)]
-    pub id: i64,
-    #[orm(foreign_key = "User::id", index)]
-    pub user_id: Option<i64>,              // 可空:为他人投保
-    #[orm(size = 64)]
-    pub name: String,
-    #[serde(skip_serializing)]
-    pub id_card_enc: Option<Vec<u8>>,
-    #[orm(size = 32)]
-    pub id_type: String,                   // "ID_CARD" | "PASSPORT" | "OTHER"
-    #[orm(size = 16)]
-    pub gender: Option<String>,            // "MALE" | "FEMALE" | "UNKNOWN"
-    pub birthday: Option<chrono::NaiveDate>,
-    #[serde(skip_serializing)]
-    pub phone_enc: Option<Vec<u8>>,
-    #[orm(size = 128)]
-    pub email: Option<String>,
-    #[orm(size = 255)]
-    pub address: Option<String>,
-    #[orm(size = 32)]
-    pub relationship: Option<String>,      // "SELF"|"SPOUSE"|"CHILD"|"PARENT"|"OTHER"
-    #[orm(size = 32)]
-    pub status: String,
-    #[orm(create_time)]
-    pub created_at: DateTime<Utc>,
-    #[orm(update_time)]
-    pub updated_at: DateTime<Utc>,
-    pub deleted_at: Option<DateTime<Utc>>,
-}
-
-// ============================================================
 // 3. insurance_products
 // ============================================================
 #[derive(Model, Debug, Clone, Serialize, Deserialize)]
@@ -939,42 +792,6 @@ pub struct InsuranceProductClause {
     pub deleted_at: Option<DateTime<Utc>>,
 }
 
-// ============================================================
-// 5. insurance_product_categories
-// ============================================================
-#[derive(Model, Debug, Clone, Serialize, Deserialize)]
-pub struct InsuranceProductCategory {
-    #[orm(primary_key)]
-    pub id: i64,
-    pub parent_id: Option<i64>,            // 自关联
-    #[orm(size = 64)]
-    pub name: String,
-    #[orm(size = 64, unique)]
-    pub slug: String,
-    pub sort_order: i32,
-    #[orm(size = 32)]
-    pub status: String,                    // "ACTIVE"|"HIDDEN"
-    #[orm(create_time)]
-    pub created_at: DateTime<Utc>,
-    #[orm(update_time)]
-    pub updated_at: DateTime<Utc>,
-    pub deleted_at: Option<DateTime<Utc>>,
-}
-
-// ============================================================
-// 6. insurance_product_category_rel
-// ============================================================
-#[derive(Model, Debug, Clone, Serialize, Deserialize)]
-pub struct InsuranceProductCategoryRel {
-    #[orm(primary_key)]
-    pub id: i64,
-    #[orm(foreign_key = "InsuranceProduct::id", index)]
-    pub product_id: i64,
-    #[orm(foreign_key = "InsuranceProductCategory::id", index)]
-    pub category_id: i64,
-    #[orm(create_time)]
-    pub created_at: DateTime<Utc>,
-}
 ```
 
 ```rust
@@ -991,7 +808,6 @@ pub struct Quote {
     pub product_id: i64,
     #[orm(foreign_key = "User::id", index)]
     pub user_id: i64,
-    #[orm(foreign_key = "PolicyHolder::id", index)]
     pub holder_id: Option<i64>,
     #[orm(size = 64)]
     pub holder_name: Option<String>,
@@ -1152,7 +968,6 @@ pub struct Policy {
     pub quote_id: i64,
     #[orm(foreign_key = "User::id", index)]
     pub user_id: i64,
-    #[orm(foreign_key = "PolicyHolder::id", index)]
     pub holder_id: Option<i64>,
     #[orm(foreign_key = "InsuranceProduct::id", index)]
     pub product_id: i64,
@@ -1260,36 +1075,6 @@ impl Contract {
     pub const STATUS_VOID: &'static str = "VOID";
     pub const STATUS_EXPIRED: &'static str = "EXPIRED";
     pub const STATUS_REJECTED: &'static str = "REJECTED";
-}
-
-// ============================================================
-// 14. contract_signers
-// ============================================================
-#[derive(Model, Debug, Clone, Serialize, Deserialize)]
-pub struct ContractSigner {
-    #[orm(primary_key)]
-    pub id: i64,
-    #[orm(foreign_key = "Contract::id", index)]
-    pub contract_id: i64,
-    #[orm(foreign_key = "User::id", index)]
-    pub user_id: Option<i64>,
-    #[orm(size = 64)]
-    pub name: String,
-    #[orm(size = 32)]
-    pub signer_type: String,  // "APPLICANT"|"INSURED"|"BENEFICIARY"|"WITNESS"
-    pub sign_order: i32,
-    #[orm(size = 32)]
-    pub status: String,  // "PENDING"|"SIGNING"|"SIGNED"|"COMPLETED"|"REJECTED"|"ABANDONED"
-    #[orm(size = 512)]
-    pub sign_url: Option<String>,
-    #[orm(size = 128)]
-    pub sign_token: Option<String>,
-    pub signed_at: Option<DateTime<Utc>>,
-    pub sign_detail: Option<serde_json::Value>,
-    #[orm(create_time)]
-    pub created_at: DateTime<Utc>,
-    #[orm(update_time)]
-    pub updated_at: DateTime<Utc>,
 }
 
 // ============================================================
@@ -1602,15 +1387,11 @@ pub trait Searchable {
 |------|------|--------|
 | users | role | `USER` / `ADMIN` / `OPERATOR` |
 | users | status | `ACTIVE` / `DISABLED` / `FROZEN` |
-| policy_holders | id_type | `ID_CARD` / `PASSPORT` / `OTHER` |
-| policy_holders | gender | `MALE` / `FEMALE` / `UNKNOWN` |
-| policy_holders | relationship | `SELF` / `SPOUSE` / `CHILD` / `PARENT` / `OTHER` |
 | insurance_products | product_type | `LIFE` / `HEALTH` / `ACCIDENT` / `TRAVEL` / `PROPERTY` |
 | insurance_products | sale_channel | `ONLINE` / `AGENT` / `BROKER` / `OFFLINE` |
 | insurance_products | status | `DRAFT` / `ON_SALE` / `OFF_SHELF` / `DISCONTINUED` |
 | insurance_product_clauses | clause_type | `MAIN` / `EXCLUSION` / `WAIVER` / `RIDER` / `OBLIGATION` |
 | insurance_product_clauses | status | `ACTIVE` / `DEPRECATED` |
-| insurance_product_categories | status | `ACTIVE` / `HIDDEN` |
 | quotes | status | `PENDING` / `APPROVED` / `REJECTED` / `EXPIRED` / `CONVERTED` / `CANCELLED` |
 | quotes_beneficiaries | beneficiary_type | `LEGAL` / `NAMED` |
 | orders | status | `CREATED` / `PAID` / `POLICY_ISSUED` / `COMPLETED` / `CANCELLED` / `EXPIRED` / `REFUNDING` / `REFUNDED` |
@@ -1623,8 +1404,6 @@ pub trait Searchable {
 | contracts | contract_type | `POLICY` / `ENDORSEMENT` / `RIDER` |
 | contracts | provider | `MOCK` / `ESIGN`(预留 e签宝) |
 | contracts | status | `DRAFT` / `PENDING_SIGN` / `SIGNING` / `COMPLETED` / `VOID` / `EXPIRED` / `REJECTED` |
-| contract_signers | signer_type | `APPLICANT` / `INSURED` / `BENEFICIARY` / `WITNESS` |
-| contract_signers | status | `PENDING` / `SIGNING` / `SIGNED` / `COMPLETED` / `REJECTED` / `ABANDONED` |
 | claims | status | `SUBMITTED` / `UNDER_REVIEW` / `PENDING_INFO` / `REVIEWING` / `APPROVED` / `PAID` / `REJECTED` / `CLOSED` / `WITHDRAWN` |
 | search_sync_logs | entity_type | `PRODUCT` / `CLAUSE` / `POLICY` |
 | search_sync_logs | op | `UPSERT` / `DELETE` |

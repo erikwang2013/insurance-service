@@ -62,7 +62,7 @@
     <text x="260" y="320" text-anchor="middle" font-size="14" fill="#fff" font-weight="600">⑤ 保单 · 契约</text>
     <text x="50" y="352" font-size="12.5" fill="#2b3a4a">• 保单签发 / 详情；受益人批改（POLICY_ENDORSE 审计留痕）</text>
     <text x="50" y="372" font-size="12.5" fill="#2b3a4a">• 电子合同：Mock 签署 / 签署回调 / 合同落库（易签渠道规划中）</text>
-    <text x="50" y="392" font-size="12.5" fill="#2b3a4a">• 签约人签名记录（contract_signer）</text>
+    <text x="50" y="392" font-size="12.5" fill="#2b3a4a">• 签约人签名记录</text>
   </g>
 
   <!-- ===================== 6. 理赔 · 运营 · 审计 ===================== -->

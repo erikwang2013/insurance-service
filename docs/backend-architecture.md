@@ -126,11 +126,8 @@ insurance-service/
 │   ├── models/                   # bee_orm #[derive(Model)]（对齐 db-schema.md §6）
 │   │   ├── mod.rs
 │   │   ├── user.rs
-│   │   ├── policy_holder.rs
 │   │   ├── insurance_product.rs
 │   │   ├── insurance_product_clause.rs
-│   │   ├── insurance_product_category.rs
-│   │   ├── insurance_product_category_rel.rs
 │   │   ├── quote.rs
 │   │   ├── quote_beneficiary.rs
 │   │   ├── order.rs
@@ -138,7 +135,6 @@ insurance-service/
 │   │   ├── policy.rs
 │   │   ├── policy_beneficiary.rs
 │   │   ├── contract.rs
-│   │   ├── contract_signer.rs
 │   │   ├── claim.rs
 │   │   ├── search_sync_log.rs
 │   │   └── audit_log.rs
@@ -684,10 +680,10 @@ pub trait ElectronicSignature: Send + Sync {
     fn name(&self) -> &'static str;                       // "MOCK" | "ESIGN"
 
     /// 创建签署流程，返回平台流程 ID 与各签署方签署链接
-    async fn create_contract(&self, contract: &Contract, signers: &[ContractSigner]) -> Result<EsignCreateResult>;
+    async fn create_contract(&self, contract: &Contract, signer_ids: &[i64]) -> Result<EsignCreateResult>;
 
     /// 获取指定签署方的签署 URL
-    async fn get_sign_url(&self, sign_flow_id: &str, signer: &ContractSigner) -> Result<String>;
+    async fn get_sign_url(&self, sign_flow_id: &str, signer_id: i64) -> Result<String>;
 
     /// 校验签署是否全部完成
     async fn verify_completion(&self, sign_flow_id: &str) -> Result<bool>;
@@ -695,7 +691,7 @@ pub trait ElectronicSignature: Send + Sync {
 
 pub struct EsignCreateResult {
     pub sign_flow_id: String,          // 存 contracts.sign_flow_id
-    pub sign_urls: Vec<(i64, String)>, // (contract_signer.id, url)
+    pub sign_urls: Vec<(i64, String)>, // (签署方序号, url)
 }
 ```
 
@@ -708,13 +704,13 @@ pub struct MockEsignProvider;
 impl ElectronicSignature for MockEsignProvider {
     fn name(&self) -> &'static str { "MOCK" }
 
-    async fn create_contract(&self, contract: &Contract, signers: &[ContractSigner]) -> Result<EsignCreateResult> {
+    async fn create_contract(&self, contract: &Contract, signer_ids: &[i64]) -> Result<EsignCreateResult> {
         let sign_flow_id = format!("MOCK-FLOW-{}", contract.contract_no);
-        let sign_urls = signers.iter().map(|s| (s.id, format!("/sign/mock/{sign_flow_id}/{}", s.id))).collect();
+        let sign_urls = signer_ids.iter().map(|id| (*id, format!("/sign/mock/{sign_flow_id}/{id}"))).collect();
         Ok(EsignCreateResult { sign_flow_id, sign_urls })
     }
 
-    async fn get_sign_url(&self, sign_flow_id: &str, _signer: &ContractSigner) -> Result<String> {
+    async fn get_sign_url(&self, sign_flow_id: &str, _signer_id: i64) -> Result<String> {
         Ok(format!("/sign/mock/{sign_flow_id}"))
     }
 
@@ -730,7 +726,7 @@ impl ElectronicSignature for MockEsignProvider {
 ```
 保单生成 → 创建合同(DRAFT) → create_contract → 各签署方生成 sign_url
 → 合同 PENDING_SIGN → 前端 WebView 打开 sign_url 签署
-→ 电子签回调 → 校验全部签完 → 合同 COMPLETED + 更新 contract_signers.status
+→ 电子签回调 → 校验全部签完 → 合同 COMPLETED
 ```
 
 - 合同 PDF 生成后计算 `file_hash`（SHA-256）防篡改；

@@ -36,29 +36,6 @@ CREATE TABLE users (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ============================================================
--- 2. policy_holders 被保人档案
--- ============================================================
-CREATE TABLE policy_holders (
-  id            BIGINT UNSIGNED NOT NULL PRIMARY KEY, -- snowflake 主键,应用层 idgen_rs 生成
-  user_id       BIGINT UNSIGNED NULL,        -- 关联投保人账户;为他人投保时为 NULL
-  name          VARCHAR(64)   NOT NULL,      -- 被保人姓名
-  id_card_enc   VARBINARY(1024) NULL,        -- 身份证密文
-  id_type       VARCHAR(32)   NOT NULL DEFAULT 'ID_CARD', -- ID_CARD/PASSPORT/OTHER
-  gender        VARCHAR(16)   NULL,          -- MALE / FEMALE / UNKNOWN
-  birthday      DATE          NULL,
-  phone_enc     VARBINARY(512) NULL,         -- 手机号密文
-  email         VARCHAR(128)  NULL,
-  address       VARCHAR(255)  NULL,
-  relationship  VARCHAR(32)   NULL,          -- 与投保人关系 SELF/SPOUSE/CHILD/PARENT/OTHER
-  status        VARCHAR(32)   NOT NULL DEFAULT 'ACTIVE', -- ACTIVE / DELETED
-  created_at    DATETIME(3)   NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
-  updated_at    DATETIME(3)   NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
-  deleted_at    DATETIME(3)   NULL,
-  KEY idx_holder_user (user_id),
-  KEY idx_holder_name (name)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- ============================================================
 -- 3. insurance_products 保险产品
 -- ============================================================
 CREATE TABLE insurance_products (
@@ -116,39 +93,6 @@ CREATE TABLE insurance_product_clauses (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ============================================================
--- 5. insurance_product_categories 产品分类(树)
--- ============================================================
-CREATE TABLE insurance_product_categories (
-  id          BIGINT UNSIGNED NOT NULL PRIMARY KEY, -- snowflake 主键,应用层 idgen_rs 生成
-  parent_id   BIGINT UNSIGNED NULL,     -- 父分类,根为 NULL
-  name        VARCHAR(64)   NOT NULL,
-  slug        VARCHAR(64)   NOT NULL,
-  sort_order  INT           NOT NULL DEFAULT 0,
-  status      VARCHAR(32)   NOT NULL DEFAULT 'ACTIVE', -- ACTIVE / HIDDEN
-  created_at  DATETIME(3)   NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
-  updated_at  DATETIME(3)   NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
-  deleted_at  DATETIME(3)   NULL,
-  UNIQUE KEY uk_category_slug (slug),
-  KEY idx_category_parent (parent_id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- ============================================================
--- 6. insurance_product_category_rel 产品-分类(多对多)
--- ============================================================
-CREATE TABLE insurance_product_category_rel (
-  id          BIGINT UNSIGNED NOT NULL PRIMARY KEY, -- snowflake 主键,应用层 idgen_rs 生成
-  product_id  BIGINT UNSIGNED NOT NULL,
-  category_id BIGINT UNSIGNED NOT NULL,
-  created_at  DATETIME(3)   NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
-  UNIQUE KEY uk_prod_cat (product_id, category_id),
-  KEY idx_cat_rel_category (category_id),
-  CONSTRAINT fk_catrel_product FOREIGN KEY (product_id)
-    REFERENCES insurance_products (id) ON DELETE CASCADE,
-  CONSTRAINT fk_catrel_category FOREIGN KEY (category_id)
-    REFERENCES insurance_product_categories (id) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- ============================================================
 -- 7. quotes 报价 / 投保方案
 -- ============================================================
 CREATE TABLE quotes (
@@ -181,9 +125,7 @@ CREATE TABLE quotes (
   CONSTRAINT fk_quote_product FOREIGN KEY (product_id)
     REFERENCES insurance_products (id),
   CONSTRAINT fk_quote_user FOREIGN KEY (user_id)
-    REFERENCES users (id),
-  CONSTRAINT fk_quote_holder FOREIGN KEY (holder_id)
-    REFERENCES policy_holders (id)
+    REFERENCES users (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ============================================================
@@ -353,30 +295,6 @@ CREATE TABLE contracts (
   KEY idx_contract_status (status),
   CONSTRAINT fk_contract_policy FOREIGN KEY (policy_id)
     REFERENCES policies (id) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- ============================================================
--- 14. contract_signers 合同签署方
--- ============================================================
-CREATE TABLE contract_signers (
-  id            BIGINT UNSIGNED NOT NULL PRIMARY KEY, -- snowflake 主键,应用层 idgen_rs 生成
-  contract_id   BIGINT UNSIGNED NOT NULL,
-  user_id       BIGINT UNSIGNED NULL,               -- 登录用户签署
-  name          VARCHAR(64)   NOT NULL,             -- 签署人姓名
-  signer_type   VARCHAR(32)   NOT NULL DEFAULT 'APPLICANT', -- APPLICANT/INSURED/BENEFICIARY/WITNESS
-  sign_order    INT           NOT NULL DEFAULT 0,   -- 签署顺序
-  status        VARCHAR(32)   NOT NULL DEFAULT 'PENDING',
-  sign_url      VARCHAR(512)  NULL,                 -- 签署链接(电子签平台)
-  sign_token    VARCHAR(128)  NULL,                 -- 签署凭证
-  signed_at     DATETIME(3)   NULL,
-  sign_detail   JSON          NULL,                 -- 签署环境/IP/时间/落款坐标
-  created_at    DATETIME(3)   NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
-  updated_at    DATETIME(3)   NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
-  KEY idx_csign_contract (contract_id),
-  KEY idx_csign_user (user_id),
-  KEY idx_csign_status (status),
-  CONSTRAINT fk_csign_contract FOREIGN KEY (contract_id)
-    REFERENCES contracts (id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ============================================================
