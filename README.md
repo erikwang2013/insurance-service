@@ -253,6 +253,42 @@ cargo test           # 全部测试（单元 + 集成）
 > 代码部分仍遵循仓库原有 `LICENSE`；第三方素材（如明确标注的 Go Gopher 等）仍遵循其原许可证。
 
 
+## 开源版 vs 商业版
+
+> 商业版代码位于 `open-project/insurance-service`，与开源版同源；商业版是当前开源版的严格超集（无开源版独有的文件、表或路由）。
+
+| 维度 | 开源版 | 商业版 |
+|------|--------|--------|
+| 授权 | 仅个人学习 / 研究，禁止商业使用 | 需商业授权，联系 erik@erik.xyz |
+| 核心交易闭环 | 认证 / RBAC / 商品 / 报价 / 订单 / 支付（Mock）/ 保单 / 合同（Mock）/ 理赔 / 审计 | 同左，全部保留 |
+| 支付与电子签 | 内联 Mock | 保留 Provider 抽象与渠道适配骨架（微信支付 / 易签 + Mock；真实渠道需配置） |
+| 全文搜索 | MySQL LIKE | OpenSearch + rust_scout 同步 Worker（未就绪自动降级 LIKE） |
+| 运营统计 | 无 | `POST /api/v1/admin/stats` |
+| 浏览器展示面 | 纯 JSON，无 HTML | `GET /` 落地页、`/favicon.svg`、`/pet/{slug}`、HTML 错误页、吉祥物素材 |
+| 扩展数据模型 | 14 张表 | 19 张表：+ 产品分类 / 分类关系 / 被保人 / 合同签署方 / 搜索同步日志 |
+| 代码规模 | 56 个 Rust 源文件 / 7,059 行 | 74 个 / 8,616 行 |
+| 路由 | 40 条（38 业务） | 44 条（39 业务 + 浏览器面） |
+| 控制器 / 模型 / 服务 | 11 / 13 / 10 | 12 / 18 / 11 |
+| 测试 | 以仓库 HEAD 为准 | 商业版 README 标注 26 单元 + 115 集成（以交付版本为准） |
+
+### 商业版独有能力
+
+- **浏览器访问面**：落地页、吉祥物/宠物表情、favicon、HTML 错误页。
+- **支付/电子签 Provider 层**：`providers/payment`（微信 / Mock）与 `providers/esign`（易签 / Mock）；开源版已剥离为内联 Mock。
+- **OpenSearch 搜索同步**：`search/sync_worker.rs`、`search_sync_logs` 表、`rust_scout` 依赖、Redis/OpenSearch 配置。
+- **运营统计**：`/api/v1/admin/stats` 及对应 service。
+- **扩展业务模型**：产品分类、分类关系、被保人、合同签署方。
+
+### 开源版保留
+
+- 用户认证 / JWT / RBAC、保险商品、报价、订单、支付回调（Mock）、保单、电子合同（Mock）、理赔、审计、MySQL LIKE 搜索、AES-256-GCM 加密、限流与安全扫描。
+- 适合个人学习、研究、二次开发原型；生产或商业部署需取得商业授权。
+
+**商业版授权与交付条款请联系：erik@erik.xyz**
+
+**English summary:** The open edition is for personal study and research and retains the core insurance transaction loop (auth/RBAC, products, quotes, orders, mock payment, policies, mock e-sign, claims, audit, MySQL LIKE search). The commercial edition in `open-project/insurance-service` is a strict superset: browser landing/mascot pages, external payment/e-sign provider layer, OpenSearch sync worker, admin ops stats, and product-category/policy-holder/contract-signer schema (19 tables vs 14). Commercial licensing and delivery: erik@erik.xyz.
+
+
 ## 项目授权 / Project License
 
 Copyright (c) 2026 erik <erik@erik.xyz> — https://erik.xyz
