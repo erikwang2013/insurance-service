@@ -1,0 +1,44 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Create missing tags & releases
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@f548e57e544e1ff5a4c46bf1e1b8685f8e4a348a
+        with:
+          fetch-depth: 0
+
+      # 版本来源：docs/CHANGELOG.md 中的版本标题 + Cargo.toml 中的最新版本；
+      # 只补建尚未打 tag 的版本（增量），发布内容为该版本的 changelog 段落，
+      # 不打包应用二进制。
+      - name: Create tags and releases incrementally
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          latest=$(sed -n 's/^version = "\([0-9][0-9.]*\)"/\1/p' Cargo.toml | head -1)
+          echo "Latest version from Cargo.toml: $latest"
+
+          candidates=$( { grep -oE '^## \[[0-9]+\.[0-9]+\.[0-9]+\]' docs/CHANGELOG.md | sed -E 's/^## \[([0-9.]+)\]/\1/'; echo "$latest"; } | sort -Vu )
+
+          for v in $candidates; do
+            tag="v$v"
+            if git rev-parse "$tag" >/dev/null 2>&1; then
+              echo "Tag $tag already exists, skipping"
+              continue
+            fi
+            body=$(awk -v v="$v" 'BEGIN { re = "^## \\[" v "\\]" } $0 ~ re { p = 1; next } /^## \[/ { if (p) exit } p { print }' docs/CHANGELOG.md)
+            git tag "$tag"
+            git push origin "$tag"
+            gh release create "$tag" --title "Beerust $v" --notes "$body"
+            echo "Created tag and release: $tag"
+          done

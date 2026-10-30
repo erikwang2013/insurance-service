@@ -1,15 +1,23 @@
 [workspace]
 resolver = "2"
 members = ["."]            # 单 crate；后续可按需拆分 crates/
+default-members = ["."]    # 测试/构建默认只针对本 crate，不含 vendor 快照
 
 [workspace.package]
 version = "1.10.0"
 edition = "2024"
 license = "Apache-2.0"
 rust-version = "1.87"
+# 以下字段供 vendor/bee-rust 快照内的 crate 继承（其自身 workspace 清单在包内嵌场景下
+# 会被 Cargo 视为本 workspace 的成员，故此处需与 bee-rust 1.0.6 保持一致）
+repository = "https://github.com/erikwang2013/bee-rust"
+description = "A production-grade web framework for Rust, inspired by Go's Beego"
+keywords = ["web", "framework", "beego", "mvc", "orm"]
+categories = ["web-programming"]
 
 [workspace.dependencies]
 axum = "0.8"               # 与 bee_router 对齐（bee-rust[workspace].axum）
+tower = "0.5"              # 供 vendor/bee-rust 快照内的 crate 继承
 tokio = { version = "1", features = ["full"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -29,13 +37,11 @@ reqwest = { version = "0.12", default-features = false, features = ["json", "rus
 # idgen_rs：snowflake 主键生成（0.2.0 为 AtomicU64 lock-free；网络拉取失败时降级 0.1.6）
 idgen_rs = "0.2"
 
-# bee-rust（v1.0.6，git 依赖，锁定 rev 保证可复现）
-# 注意：2026-09-01 起 GitHub git 协议（clone/ls-remote）在本机间歇性超时，但 codeload
-# tarball 与 api.github.com 通畅。为不阻塞开发，临时使用 /home/erik/vendor/bee-rust
-# （从 HEAD 93dd5c57 快照解压的本地副本，path 指向 crates/bee_rust 子 crate，因仓库根为
-# virtual workspace manifest）作为依赖；GitHub git 恢复后切回：
-#   bee_rust = { git = "https://github.com/erikwang2013/bee-rust", features = ["full"] }
-bee_rust = { path = "/home/erik/vendor/bee-rust/crates/bee_rust", features = ["full"] }
+# bee-rust（v1.0.6，vendor 快照，锁定源码保证离线可复现构建）
+# 来源：bee-rust HEAD 93dd5c57cfff66f8c25a8e9a56e880278b72c287 的 git archive 快照。
+# crates.io 的 1.6.x API 与本代码不兼容；GitHub git 协议在本机不可达。
+# path 指向 crates/bee_rust 子 crate（仓库根为 virtual workspace manifest）。
+bee_rust = { path = "vendor/bee-rust/crates/bee_rust", features = ["full"] }
 
 # security-rust 已被 bee_rust 间接引用，此处显式声明便于直接使用 Scanner
 # 注：crates.io 包名为 `security-rust`（连字符），代码中 import 为 `security_rust`（下划线）
@@ -56,7 +62,7 @@ authors = ["erik <erik@erik.xyz>"]
 license = "Apache-2.0"
 
 # 特性说明：
-# - `bee_rust` 已于 2026-09-01 激活（本地 path 暂代 git，见 [workspace.dependencies] 注释）。
+# - `bee_rust` 已于 2026-09-01 激活（vendor 快照，见 [workspace.dependencies] 注释）。
 # - 业务模块（models/services/providers/crypto/search/middleware）采用标准 struct + 本地
 #   抽象实现，不依赖 bee_* crate，因此默认构建可完整编译。
 

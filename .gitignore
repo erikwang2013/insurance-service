@@ -28,7 +28,6 @@ runtime
 tmp
 .phpunit.result.cache
 .cursor
-vendor
 .phpunit.cache
 .github.phpunit.cache/
 .claude
