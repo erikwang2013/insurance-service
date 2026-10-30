@@ -43,7 +43,8 @@ impl PolicyService {
         format!("POL{}{:04x}", Utc::now().timestamp_millis(), Uuid::new_v4().as_u128() as u64 & 0xFFFF)
     }
 
-    /// 签发保单：订单归属本人且已支付 → 按订单自身的 quote_id 取报价 → 落库。
+    /// 签发保单：锁定订单，归属本人且已支付 → 按订单自身的 quote_id 取报价 → 落库。
+    /// 订单已是 POLICY_ISSUED 时返回已有保单（幂等），不再重复签发。
     /// `user_id` 取自已认证身份（控制器从 token 取），不信请求体。
     pub async fn issue(&self, user_id: i64, req: IssuePolicyReq) -> Result<Policy> {
         let policy_no = Self::policy_no();
@@ -56,13 +57,27 @@ impl PolicyService {
                         .exec_first(
                             "SELECT id, quote_id, product_id, product_name, holder_name, \
                              insurance_amount, term_months, payable_amount, status \
-                             FROM orders WHERE id = ? AND user_id = ? AND deleted_at IS NULL LIMIT 1",
+                             FROM orders WHERE id = ? AND user_id = ? AND deleted_at IS NULL \
+                             LIMIT 1 FOR UPDATE",
                             vec![req.order_id, user_id],
                         )
                         .await
                         .map_err(db_error)?;
                     let order = order.ok_or_else(|| AppError::business("订单不存在"))?;
                     let order_status: String = order.get("status").unwrap_or_default();
+                    // 幂等：同一订单重复签发返回同一张保单
+                    if order_status == OrderStatus::POLICY_ISSUED {
+                        let existing: Option<Row> = tx
+                            .exec_first(
+                                "SELECT * FROM policies WHERE order_id = ? AND deleted_at IS NULL LIMIT 1",
+                                vec![req.order_id],
+                            )
+                            .await
+                            .map_err(db_error)?;
+                        let existing = existing
+                            .ok_or_else(|| AppError::state_conflict("订单已签发但保单缺失"))?;
+                        return Ok(Some(existing));
+                    }
                     if order_status != OrderStatus::PAID {
                         return Err(AppError::business("订单未支付，无法签发保单"));
                     }
@@ -137,19 +152,26 @@ impl PolicyService {
                     .map_err(db_error)?;
 
                     tx.exec_drop(
-                        "UPDATE orders SET status = ? WHERE id = ? AND user_id = ?",
+                        "UPDATE orders SET status = ?, policy_issued_at = NOW(), updated_at = NOW() \
+                         WHERE id = ? AND user_id = ? AND status = ?",
                         vec![
                             Value::from(OrderStatus::POLICY_ISSUED),
                             Value::from(req.order_id),
                             Value::from(user_id),
+                            Value::from(OrderStatus::PAID),
                         ],
                     )
                     .await
                     .map_err(db_error)?;
+                    if tx.affected_rows() != 1 {
+                        return Err(AppError::state_conflict("订单状态已变化，保单签发失败"));
+                    }
 
-                    tx.exec_first("SELECT * FROM policies WHERE id = ? LIMIT 1", vec![id])
+                    let policy_row = tx
+                        .exec_first("SELECT * FROM policies WHERE id = ? LIMIT 1", vec![id])
                         .await
-                        .map_err(db_error)
+                        .map_err(db_error)?;
+                    Ok(policy_row)
                 })
             })
             .await?;

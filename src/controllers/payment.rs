@@ -47,9 +47,8 @@ impl PaymentController {
             Ok(r) => r,
             Err(resp) => return self.reply(ctx, resp).await,
         };
-        if req.channel.is_empty() {
-            req.channel = "WECHAT".to_string();
-        }
+        // 该端点固定微信渠道，不信请求体里的 channel
+        req.channel = "WECHAT".to_string();
         let user_id = match current_user_id(ctx) {
             Ok(id) => id,
             Err(resp) => return self.reply(ctx, resp).await,
@@ -74,15 +73,21 @@ impl PaymentController {
     }
 
     async fn callback(&self, ctx: &mut Context) -> Result<(), RouterError> {
-        let _provider = match ctx.param("provider") {
-            Some(p) => p,
+        let provider = match ctx.param("provider") {
+            Some(p) => p.to_string(),
             None => return self.reply(ctx, json_envelope(40000, "缺少 provider")).await,
         };
+        let token = ctx
+            .request
+            .headers()
+            .get("x-callback-token")
+            .and_then(|v| v.to_str().ok())
+            .map(str::to_string);
         let req: CallbackReq = match read_json(ctx).await {
             Ok(r) => r,
             Err(resp) => return self.reply(ctx, resp).await,
         };
-        match self.service.callback(req).await {
+        match self.service.callback(&provider, token.as_deref(), req).await {
             Ok(p) => {
                 let data = serde_json::to_value(&p)
                     .map_err(|e| RouterError::SerializeError(e.to_string()))?;

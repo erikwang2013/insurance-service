@@ -110,7 +110,10 @@ impl AppState {
         let claim = Arc::new(ClaimController::new(ClaimService::new(db.clone())));
         let quote = Arc::new(QuoteController::new(QuoteService::new(db.clone())));
         let order = Arc::new(OrderController::new(OrderService::new(db.clone())));
-        let payment = Arc::new(PaymentController::new(PaymentService::new(db.clone())));
+        let payment = Arc::new(PaymentController::new(PaymentService::new(
+            db.clone(),
+            cfg.payment.callback_token.clone(),
+        )));
         let policy = Arc::new(PolicyController::new(PolicyService::new(db.clone())));
         let contract = Arc::new(ContractController::new(ContractService::new(db.clone())));
         // 限流默认：按对端 socket IP（ConnectInfo，缺失回退 unknown）60 秒 300 次，宽松防滥用；

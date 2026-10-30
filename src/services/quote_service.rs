@@ -1,11 +1,10 @@
 //! 报价服务（任务 #4 / C4）
 //!
-//! 事务内原子创建报价：校验产品存在 → 费率表试算 → INSERT quotes → INSERT 受益人 → 回读 quote。
+//! 事务内原子创建报价：校验产品在售与保额/期限区间 → 费率行试算 → INSERT quotes → INSERT 受益人 → 回读 quote。
 //! 报价号格式：`QT{UTC毫秒}{4位hex}`；默认 PENDING，7 天有效期。
 //!
-//! C4 费率表化：产品在 `quote_rates` 配置费率行时（按产品+保障期+保额区间命中），
-//! 保费改为服务端按 `保费=保额×rate` 计算并覆盖请求值（费率行优先）；
-//! 未命中或费率表尚未建（ERRNO 1146，代码先于建表上线）时，沿用请求方 premium（保底回退，兼容既有行为）。
+//! 保费只由服务端按 `保费=保额×rate` 计算：未配置费率行（或费率表未部署）时拒绝报价，
+//! 不再信任请求体中的 premium。
 
 use chrono::NaiveDate;
 use chrono::{DateTime, Utc};
@@ -18,6 +17,7 @@ use uuid::Uuid;
 use crate::db::db_error;
 use crate::db::Db;
 use crate::error::{AppError, Result};
+use crate::models::insurance_product::InsuranceProduct;
 use crate::models::quote::Quote;
 
 /// 创建报价请求体
@@ -37,8 +37,6 @@ pub struct CreateQuoteReq {
     pub insurance_amount: Decimal,
     /// 保险期间（月）
     pub term_months: i32,
-    /// 每期保费
-    pub premium: Decimal,
     /// 保费明细（JSON）
     pub premium_detail: Option<serde_json::Value>,
     /// 生效日
@@ -81,7 +79,7 @@ impl QuoteService {
         format!("QT{}{:04x}", ms, hex)
     }
 
-    /// 事务内创建报价：产品存在性校验 → 落库 quote → 落库受益人 → 回读。
+    /// 事务内创建报价：产品在售/区间校验 → 费率试算 → 落库 quote → 落库受益人 → 回读。
     /// `user_id` 取自已认证身份（控制器从 token 取），不信请求体。
     pub async fn create(&self, user_id: i64, req: CreateQuoteReq) -> Result<Quote> {
         let quote_no = Self::generate_quote_no();
@@ -106,22 +104,34 @@ impl QuoteService {
             .db
             .with_tx(|tx| {
                 Box::pin(async move {
-                    // 1) 校验产品存在
-                    let exists: Option<i64> = tx
+                    // 1) 产品须存在、未删除且在售；读取保额/期限区间用于边界校验
+                    let product: Option<Row> = tx
                         .exec_first(
-                            "SELECT id FROM insurance_products WHERE id = ? AND deleted_at IS NULL LIMIT 1",
+                            "SELECT status, min_amount, max_amount, min_term_months, max_term_months \
+                             FROM insurance_products WHERE id = ? AND deleted_at IS NULL LIMIT 1",
                             vec![req.product_id],
                         )
                         .await
                         .map_err(db_error)?;
-                    if exists.is_none() {
-                        return Err(AppError::business("产品不存在"));
+                    let product = product.ok_or_else(|| AppError::business("产品不存在"))?;
+                    let status: String = product
+                        .get::<Option<String>, &str>("status")
+                        .flatten()
+                        .unwrap_or_default();
+                    if status != InsuranceProduct::STATUS_ON_SALE {
+                        return Err(AppError::business("产品未上架，暂不可报价"));
                     }
+                    validate_quote_bounds(
+                        req.insurance_amount,
+                        req.term_months,
+                        dec_opt_row(&product, "min_amount"),
+                        dec_opt_row(&product, "max_amount"),
+                        product.get::<Option<i32>, &str>("min_term_months").flatten(),
+                        product.get::<Option<i32>, &str>("max_term_months").flatten(),
+                    )?;
 
-                    // 1.5) 费率表试算：命中（产品+保障期+保额区间）→ 保费=保额×rate（费率行优先）；
-                    //      未命中 / 费率表未建(1146) → 沿用请求 premium（回退，兼容旧库与既有调用）。
-                    let mut premium = req.premium;
-                    match tx
+                    // 2) 费率行必须命中：保费一律由服务端按 保额×rate 计算
+                    let rate = match tx
                         .exec_first(
                             "SELECT rate FROM quote_rates \
                              WHERE product_id = ? AND term_months = ? \
@@ -137,17 +147,17 @@ impl QuoteService {
                         )
                         .await
                     {
-                        Ok(Some(row)) => {
-                            if let Some(rate) = dec_opt_row(&row, "rate") {
-                                premium = (req.insurance_amount * rate).round_dp(2);
-                            }
-                        }
-                        Ok(None) => {}
-                        Err(e) if rate_table_missing(&e) => {} // 费率表未部署：按无费率行回退
+                        Ok(Some(row)) => dec_opt_row(&row, "rate"),
+                        Ok(None) => None,
+                        // 费率表未部署时同样视为未配置费率（代码先于建表上线不该 500）
+                        Err(e) if e.to_string().contains("doesn't exist") => None,
                         Err(e) => return Err(db_error(e)),
-                    }
+                    };
+                    let rate =
+                        rate.ok_or_else(|| AppError::business("该产品未配置费率，暂不可报价"))?;
+                    let premium = compute_premium(req.insurance_amount, rate)?;
 
-                    // 2) INSERT quote
+                    // 3) INSERT quote
                     let params: Vec<Value> = vec![
                         quote_id.into(),
                         Value::from(&quote_no),
@@ -180,7 +190,7 @@ impl QuoteService {
                     .await
                     .map_err(db_error)?;
 
-                    // 3) 插入受益人（子表主键同样显式预生成，避免依赖父表回读）
+                    // 4) 插入受益人（子表主键同样显式预生成，避免依赖父表回读）
                     for b in &beneficiaries {
                         let bid = crate::utils::idgen::next_id();
                         let bparams: Vec<Value> = vec![
@@ -243,11 +253,40 @@ impl QuoteService {
     }
 }
 
-/// 判断是否"费率表不存在"（MySQL ERRNO 1146）：表未建时按无费率行回退，
-/// 允许代码先于 install.sql 上线（平滑部署，费率特性随后台建表自动开启）。
-fn rate_table_missing(e: &mysql_async::Error) -> bool {
-    let msg = e.to_string();
-    msg.contains("quote_rates") && msg.contains("doesn't exist")
+/// 报价边界校验：金额/期限必须为正，且落在产品配置的区间内（NULL 表示不限）。
+fn validate_quote_bounds(
+    amount: Decimal,
+    term_months: i32,
+    min_amount: Option<Decimal>,
+    max_amount: Option<Decimal>,
+    min_term: Option<i32>,
+    max_term: Option<i32>,
+) -> Result<()> {
+    if amount <= Decimal::ZERO {
+        return Err(AppError::business("保险金额必须大于 0"));
+    }
+    if min_amount.is_some_and(|m| amount < m) || max_amount.is_some_and(|m| amount > m) {
+        return Err(AppError::business("保险金额超出产品承保范围"));
+    }
+    if term_months <= 0 {
+        return Err(AppError::business("保障期必须大于 0"));
+    }
+    if min_term.is_some_and(|m| term_months < m) || max_term.is_some_and(|m| term_months > m) {
+        return Err(AppError::business("保障期超出产品承保范围"));
+    }
+    Ok(())
+}
+
+/// 整期保费试算：`premium = round(保额 × rate, 2)`；费率与结果都必须为正。
+fn compute_premium(amount: Decimal, rate: Decimal) -> Result<Decimal> {
+    if rate <= Decimal::ZERO {
+        return Err(AppError::business("该产品未配置有效费率，暂不可报价"));
+    }
+    let premium = (amount * rate).round_dp(2);
+    if premium <= Decimal::ZERO {
+        return Err(AppError::business("保费计算结果无效"));
+    }
+    Ok(premium)
 }
 
 // ---------- helpers: 行读取 ----------
@@ -331,4 +370,54 @@ fn value_opt_int(v: Option<i32>) -> Value {
 fn value_opt_dec(v: Option<Decimal>) -> Value {
     v.map(|d| Value::from(d.to_string()))
         .unwrap_or(Value::NULL)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn d(n: i64) -> Decimal {
+        Decimal::from(n)
+    }
+
+    #[test]
+    fn quote_bounds_accept_within_range_inclusive() {
+        assert!(validate_quote_bounds(d(1000), 12, None, None, None, None).is_ok());
+        assert!(
+            validate_quote_bounds(d(100), 6, Some(d(100)), Some(d(2000)), Some(6), Some(24)).is_ok()
+        );
+        assert!(
+            validate_quote_bounds(d(2000), 24, Some(d(100)), Some(d(2000)), Some(6), Some(24)).is_ok()
+        );
+    }
+
+    #[test]
+    fn quote_bounds_reject_invalid_amount_and_term() {
+        assert!(validate_quote_bounds(Decimal::ZERO, 12, None, None, None, None).is_err());
+        assert!(validate_quote_bounds(d(99), 12, Some(d(100)), None, None, None).is_err());
+        assert!(validate_quote_bounds(d(2001), 12, None, Some(d(2000)), None, None).is_err());
+        assert!(validate_quote_bounds(d(1000), 0, None, None, None, None).is_err());
+        assert!(validate_quote_bounds(d(1000), 5, None, None, Some(6), None).is_err());
+        assert!(validate_quote_bounds(d(1000), 25, None, None, None, Some(24)).is_err());
+    }
+
+    #[test]
+    fn premium_is_amount_times_rate_rounded_to_cents() {
+        assert_eq!(
+            compute_premium(d(1000), Decimal::new(15, 3)).unwrap(),
+            Decimal::from(15)
+        );
+        assert_eq!(
+            compute_premium(d(100), Decimal::new(1355, 4)).unwrap(),
+            Decimal::new(1355, 2)
+        );
+    }
+
+    #[test]
+    fn premium_requires_positive_rate_and_result() {
+        assert!(compute_premium(d(1000), Decimal::ZERO).is_err());
+        assert!(compute_premium(d(1000), Decimal::new(-15, 3)).is_err());
+        // 1 × 0.000001 四舍五入到分后为 0，拒绝
+        assert!(compute_premium(d(1), Decimal::new(1, 6)).is_err());
+    }
 }

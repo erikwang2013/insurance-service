@@ -1,7 +1,8 @@
 //! 订单服务（任务 #4）
 //!
-//! 事务内原子创建订单：校验 quote 属于该用户 → INSERT orders → 回读。
-//! 订单号格式：`OD{UTC毫秒}{4位hex}`；状态初始 CREATED。
+//! 事务内原子创建订单：锁定并校验 quote（本人、PENDING、未过期）→ 置为 CONVERTED
+//! → INSERT orders → 回读。订单号格式：`OD{UTC毫秒}{4位hex}`；状态初始 CREATED。
+//! 金额只取报价的 premium：优惠恒为 0，实付=应付，客户端无法指定价格。
 
 use chrono::{DateTime, Utc};
 use mysql_async::prelude::Queryable;
@@ -21,8 +22,6 @@ pub struct CreateOrderReq {
     pub quote_id: i64,
     /// 订单备注
     pub remark: Option<String>,
-    /// 优惠金额（可选，默认为 0）
-    pub discount_amount: Option<Decimal>,
 }
 
 /// 订单服务
@@ -55,15 +54,27 @@ impl OrderService {
                     // 主键由应用层 snowflake 预生成后显式插入（全库自增迁移，见 idgen）
                     let oid = crate::utils::idgen::next_id();
 
-                    // 1) 校验 quote 存在且属于该用户
+                    // 1) 锁定 quote：须属于该用户、仍为 PENDING 且未过期，随后只能转化一次
                     let q: Option<mysql_async::Row> = tx
                         .exec_first(
-                            "SELECT * FROM quotes WHERE id = ? AND user_id = ? AND status = 'PENDING' LIMIT 1",
+                            "SELECT * FROM quotes WHERE id = ? AND user_id = ? \
+                             AND status = 'PENDING' AND expires_at > NOW() \
+                             LIMIT 1 FOR UPDATE",
                             vec![req.quote_id, user_id],
                         )
                         .await
                         .map_err(db_error)?;
                     let q = q.ok_or_else(|| AppError::business("报价不存在或已失效"))?;
+                    tx.exec_drop(
+                        "UPDATE quotes SET status = 'CONVERTED', updated_at = NOW() \
+                         WHERE id = ? AND status = 'PENDING'",
+                        vec![req.quote_id],
+                    )
+                    .await
+                    .map_err(db_error)?;
+                    if tx.affected_rows() != 1 {
+                        return Err(AppError::state_conflict("报价已使用或已失效"));
+                    }
 
                     let product_id: i64 = q.get("product_id").unwrap_or_default();
                     let holder_name: String = q.get("holder_name").unwrap_or_default();
@@ -89,10 +100,13 @@ impl OrderService {
                         None => return Err(AppError::business("产品不存在")),
                     };
 
-                    // 3) 计算金额：total_amount = premium, payable_amount = premium - discount
-                    let discount = req.discount_amount.unwrap_or(Decimal::ZERO);
+                    // 3) 金额只由报价决定：优惠恒为 0，实付=应付；非正金额一律拒绝
+                    let discount = Decimal::ZERO;
                     let total_amount = premium;
-                    let payable_amount = total_amount.saturating_sub(discount);
+                    let payable_amount = total_amount;
+                    if total_amount <= Decimal::ZERO || payable_amount <= Decimal::ZERO {
+                        return Err(AppError::business("订单金额无效"));
+                    }
                     let remark_opt: Option<String> = req.remark.clone();
 
                     let params: Vec<Value> = vec![
