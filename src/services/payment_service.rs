@@ -47,6 +47,9 @@ impl PaymentService {
     }
 
     /// `user_id` 取自已认证身份（控制器从 token 取），不信请求体。
+    ///
+    /// 阶段 3 预支付统一记录 `provider = MOCK`，因此所有渠道的回调都必须走
+    /// `/payments/callback/mock`；接入真实渠道（阶段 4）后按渠道分流。
     pub async fn prepay(&self, user_id: i64, req: CreatePaymentReq) -> Result<Payment> {
         let payment_no = Self::payment_no();
         let channel = normalize_channel(&req.channel)?;
@@ -243,33 +246,6 @@ impl PaymentService {
             .await?;
 
         row_to_payment(&row)
-    }
-
-    pub async fn by_id(&self, id: i64) -> Result<Payment> {
-        let row: Option<Row> = self
-            .db
-            .conn()
-            .await?
-            .exec_first("SELECT * FROM payments WHERE id = ? LIMIT 1", vec![id])
-            .await
-            .map_err(db_error)?;
-        row.map(|r| row_to_payment(&r)).transpose()?.ok_or(AppError::NotFound)
-    }
-
-    pub async fn by_user(&self, user_id: i64, page: u32, size: u32) -> Result<Vec<Payment>> {
-        let size = size.clamp(1, 100) as usize;
-        let offset = ((page.max(1) as usize) - 1) * size;
-        let rows: Vec<Row> = self
-            .db
-            .conn()
-            .await?
-            .exec(
-                "SELECT * FROM payments WHERE user_id = ? ORDER BY created_at DESC LIMIT ? OFFSET ?",
-                vec![user_id, size as i64, offset as i64],
-            )
-            .await
-            .map_err(db_error)?;
-        rows.iter().map(row_to_payment).collect::<Result<Vec<_>>>()
     }
 }
 

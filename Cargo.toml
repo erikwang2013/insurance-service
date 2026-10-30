@@ -44,8 +44,8 @@ idgen_rs = "0.2"
 # path 指向 crates/bee_rust 子 crate（仓库根为 virtual workspace manifest）。
 bee_rust = { path = "vendor/bee-rust/crates/bee_rust", features = ["full"] }
 
-# security-rust 已被 bee_rust 间接引用，此处显式声明便于直接使用 Scanner
-# 注：crates.io 包名为 `security-rust`（连字符），代码中 import 为 `security_rust`（下划线）
+# security-rust 由 vendor/bee-rust 的 bee_router/security feature 间接引用；
+# 保留 workspace 条目供其继承（应用代码本身不再直接使用）。
 security-rust = "1"
 
 # mysql_async：bee_orm 仅提供参数化 SELECT 构建（无执行层），此处补执行与事务。
@@ -73,19 +73,15 @@ default = []
 [dependencies]
 axum = { workspace = true }
 bee_rust = { workspace = true }
-security-rust = { workspace = true }
 tokio = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 serde_urlencoded = { workspace = true }
-thiserror = { workspace = true }
 tracing = { workspace = true }
-tracing-subscriber = { workspace = true }
 async-trait = { workspace = true }
 chrono = { workspace = true }
 rust_decimal = { workspace = true }
 jsonwebtoken = { workspace = true }
-regex = { workspace = true }
 base64 = { workspace = true }
 aes-gcm = { workspace = true }
 argon2 = { workspace = true }
@@ -96,4 +92,4 @@ idgen_rs = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true }
-tower = "0.5"
+tower = { workspace = true }

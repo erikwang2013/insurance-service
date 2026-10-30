@@ -5,34 +5,6 @@
 
 use serde::{Deserialize, Serialize};
 
-/// HTTP 方法
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum Method {
-    Get,
-    Post,
-    Put,
-    Patch,
-    Delete,
-}
-
-/// 鉴权要求
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum Auth {
-    Public,
-    Authenticated,
-    AdminOrOperator,
-}
-
-/// 单条路由
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Route {
-    pub method: Method,
-    pub path: &'static str,
-    /// 控制器动作标识（bee_router 注册时映射到 Controller 方法）
-    pub handler: &'static str,
-    pub auth: Auth,
-}
-
 /// 健康检查响应
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Healthz {
@@ -256,8 +228,11 @@ async fn auth_mw(State(state): State<AppState>, mut req: Request, next: Next) ->
         .await
     {
         Ok(user) => user,
-        // 数据库故障是服务端错误，不能伪装成 401
-        Err(_) => return auth_error(StatusCode::INTERNAL_SERVER_ERROR, 50000, "服务器内部错误"),
+        // 数据库故障是服务端错误，不能伪装成 401；细节只进日志
+        Err(e) => {
+            tracing::error!(error = %e, "鉴权加载用户失败");
+            return auth_error(StatusCode::INTERNAL_SERVER_ERROR, 50000, "服务器内部错误");
+        }
     };
     let Some(user) = user else {
         return auth_error(StatusCode::UNAUTHORIZED, 40100, "未认证");
@@ -277,13 +252,17 @@ async fn auth_mw(State(state): State<AppState>, mut req: Request, next: Next) ->
     next.run(req).await
 }
 
-/// 提取 `Authorization: Bearer <token>`
+/// 提取 `Authorization: Bearer <token>`（scheme 按 RFC 6750 大小写不敏感）
 fn bearer_token(req: &Request) -> Option<&str> {
-    req.headers()
+    let (scheme, token) = req
+        .headers()
         .get(axum::http::header::AUTHORIZATION)?
         .to_str()
         .ok()?
-        .strip_prefix("Bearer ")
+        .split_once(' ')?;
+    scheme
+        .eq_ignore_ascii_case("Bearer")
+        .then(|| token.trim())
         .filter(|token| !token.is_empty())
 }
 
@@ -463,6 +442,11 @@ mod tests {
                 .unwrap()
         };
         assert_eq!(bearer_token(&with("Bearer abc")), Some("abc"));
+        // scheme 大小写不敏感（RFC 6750），token 两端空白被裁掉
+        assert_eq!(bearer_token(&with("bearer abc")), Some("abc"));
+        assert_eq!(bearer_token(&with("BEARER abc")), Some("abc"));
+        assert_eq!(bearer_token(&with("Bearer  abc ")), Some("abc"));
+        assert_eq!(bearer_token(&with("Bearer")), None);
         assert_eq!(bearer_token(&with("Bearer ")), None);
         assert_eq!(bearer_token(&with("Basic abc")), None);
         let no_header = Request::builder()

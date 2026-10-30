@@ -118,7 +118,8 @@ impl ContractService {
             .await?
             .exec_first(
                 "SELECT c.* FROM contracts c JOIN policies p ON p.id = c.policy_id \
-                 WHERE c.id = ? AND p.user_id = ? AND c.deleted_at IS NULL LIMIT 1",
+                 WHERE c.id = ? AND p.user_id = ? AND c.deleted_at IS NULL \
+                   AND p.deleted_at IS NULL LIMIT 1",
                 vec![id, user_id],
             )
             .await
@@ -150,23 +151,6 @@ impl ContractService {
             sign_url: format!("/sign/mock/{flow}"),
             provider: c.provider,
         })
-    }
-
-    pub async fn by_user(&self, user_id: i64, page: u32, size: u32) -> Result<Vec<Contract>> {
-        let size = size.clamp(1, 100) as usize;
-        let offset = ((page.max(1) as usize) - 1) * size;
-        let rows: Vec<Row> = self
-            .db
-            .conn()
-            .await?
-            .exec(
-                "SELECT c.* FROM contracts c JOIN policies p ON p.id = c.policy_id \
-                 WHERE p.user_id = ? AND c.deleted_at IS NULL ORDER BY c.created_at DESC LIMIT ? OFFSET ?",
-                vec![user_id, size as i64, offset as i64],
-            )
-            .await
-            .map_err(db_error)?;
-        rows.iter().map(row_to_contract).collect::<Result<Vec<_>>>()
     }
 }
 

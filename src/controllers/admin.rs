@@ -1,12 +1,8 @@
 //! 运营侧管理控制器：商品建档/更新、上下架/停售（POST）+ 审计日志查询（GET）
 //!
 //! 动作执行前由服务层校验操作人角色（OPERATOR/ADMIN，否则 40300）。
-//!
-//! TODO(lead): 接线 —— controllers/mod.rs 增 `pub mod admin;`、AppState 增
-//! `pub admin: Arc<AdminController>` 与 `AdminController::new(db.clone())`、
-//! `pub admin_handler` 适配器；routes.rs `build_bee_router` 注册
-//! `POST /admin/products`、`POST /admin/products/{id}/status` 与
-//! `GET /admin/audit-logs`（对齐 admin 路由）。
+//! 路由见 `routes.rs`：`/admin/products`、`/admin/products/{id}/status`、
+//! `/admin/audit-logs`。
 
 use async_trait::async_trait;
 use axum::http::StatusCode;

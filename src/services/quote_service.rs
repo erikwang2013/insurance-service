@@ -149,8 +149,14 @@ impl QuoteService {
                     {
                         Ok(Some(row)) => dec_opt_row(&row, "rate"),
                         Ok(None) => None,
-                        // 费率表未部署时同样视为未配置费率（代码先于建表上线不该 500）
-                        Err(e) if e.to_string().contains("doesn't exist") => None,
+                        // 仅费率表本身未部署时视为未配置费率（代码先于建表上线不该 500）；
+                        // 其他数据库错误照常上抛，不能伪装成「未配置费率」
+                        Err(e)
+                            if e.to_string().contains("quote_rates")
+                                && e.to_string().contains("doesn't exist") =>
+                        {
+                            None
+                        }
                         Err(e) => return Err(db_error(e)),
                     };
                     let rate =

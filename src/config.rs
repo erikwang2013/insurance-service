@@ -143,12 +143,19 @@ fn env_or(key: &str, default: &str) -> String {
     std::env::var(key).unwrap_or_else(|_| default.to_string())
 }
 
-/// 日志用 DSN：把 `://` 与 `@` 之间的 `user:password` 替换为 `***`。
+/// 日志用 DSN：把 `://` 与 `@` 之间的 `user:password` 替换为 `***`；
+/// 无 `://` 的 `user:pass@host` 形式同样脱敏。
 ///
 /// 无凭据段或非标准 DSN 原样返回（不猜测、不丢信息）。
 pub fn redact_db_url(url: &str) -> String {
     let Some((scheme, rest)) = url.split_once("://") else {
-        return url.to_string();
+        // 无 scheme 的 DSN（如 `user:pass@host/db`）：整段凭据替换为 ***
+        return match url.rsplit_once('@') {
+            Some((credentials, host)) if !credentials.is_empty() && !host.is_empty() => {
+                format!("***@{host}")
+            }
+            _ => url.to_string(),
+        };
     };
     let Some((_credentials, host)) = rest.rsplit_once('@') else {
         return url.to_string();
@@ -174,6 +181,15 @@ mod tests {
         assert_eq!(
             redact_db_url("mysql://alice@db.local/insurance"),
             "mysql://***@db.local/insurance"
+        );
+        // 无 `://` 的 DSN 形式同样脱敏
+        assert_eq!(
+            redact_db_url("alice:s3cret@db.local:3306/insurance"),
+            "***@db.local:3306/insurance"
+        );
+        assert_eq!(
+            redact_db_url("alice@db.local/insurance"),
+            "***@db.local/insurance"
         );
     }
 

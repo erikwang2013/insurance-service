@@ -26,8 +26,9 @@
 
 - **客户端**：Flutter App、微信小程序、HarmonyOS App、运营管理后台。
 - **接入层**：`bee_rust + axum` 提供 `/healthz` 健康检查与 `/api/v1/*` 业务路由。
-- **中间件过滤器链**：`SecurityFilter → Trace → JWT 认证（RBAC）→ Controller 分派`，
-  任一层拒绝即返回 `401 / 403` 统一信封，不进入业务层。
+- **中间件过滤器链**：`Trace → 限流（进程内固定窗口，按对端 socket IP）→ JWT 认证（RBAC）→ Controller 分派`，
+  拒绝即返回 `401 / 403 / 429` 统一信封，不进入业务层。受保护路由需
+  `Authorization: Bearer <access token>`。
 - **Controller / Service**：auth / product / search / quote / order / payment / policy / contract / claim
   各业务 Controller 经 `bee_router` 分发；Service 为事务边界（`services/*_service.rs`）。
 - **支付与签约**：当前为内联 Mock 实现（微信 / 支付宝 / 易签等外部渠道未接入）。
@@ -41,16 +42,17 @@
 
 - **用户与认证**：注册（用户名唯一 + argon2 口令哈希）、登录（账号密码；微信 openid 绑定登录闭环——code2session 校验 + 绑定 + 按 openid 直登，凭据未配置时降级报错）、
   JWT 双令牌（access 短时效 + refresh 长时效，token_version 版本化——logout / 改密 / 换绑即吊销旧令牌）与 RBAC 角色（USER / AGENT / OPERATOR / ADMIN）。
-- **保险商品**：列表分页 / 状态过滤 / 精选位、详情、关联条款阅读，运营后台建档与上架 / 下架 / 停售（OPERATOR / ADMIN）。
-- **报价**：费率表驱动（`quote_rates` 按产品 / 保障期 / 保额区间定价，命中优先，未命中回退请求保费）。
+- **保险商品**：公开列表（仅返回在售，分页）/ 精选位 / 详情 / 关联条款阅读；运营后台按状态查询、建档与上架 / 下架 / 停售（OPERATOR / ADMIN）。
+- **报价**：费率表驱动（`quote_rates` 按产品 / 保障期 / 保额区间定价）；未配置费率行则拒绝报价，保费一律由服务端按 保额 × 费率 计算，不接受客户端保费。
 - **全文搜索**：MySQL LIKE（带分页保护）。
 - **交易闭环**：报价 → 订单 → 支付（预下单 / 支付 / 回调）API 已挂载；微信渠道当前为 Mock，真实渠道规划中。
 - **保单与契约**：保单列表 / 详情、受益人批改（`POLICY_ENDORSE` 审计留痕）、电子合同内联 Mock 签署与签署回调 API 已挂载；外部电子签渠道未接入。
 - **理赔**：报案（`CLM` 单号，校验保单归属）、我的理赔列表、审核（APPROVE / REJECT，需 OPERATOR / ADMIN）、资料上传 / 列表（`claim_documents` 元数据）已实现。
 - **运营 / 审计**：运营后台 API、`audit_logs` 全量留痕 + 审计查询接口（`/api/v1/admin/audit-logs`，OPERATOR / ADMIN）。
-- **横切能力**：入站安全扫描、参数化查询、AES-256-GCM 敏感字段加密、令牌精确过期（leeway=0）、
-  snowflake 分布式主键（idgen_rs 无锁生成，worker 位长 6 + 序列位长 6，worker_id 经 `IDGEN_WORKER_ID` 配置）、
-  全链路 `trace_id`、统一响应信封（`{code, message, data}`，业务错误 `40000`）。
+- **横切能力**：JWT 认证（受保护路由需 `Authorization: Bearer`）/ RBAC、参数化查询、AES-256-GCM 敏感字段加密、
+  令牌精确过期（leeway=0）、snowflake 分布式主键（idgen_rs 无锁生成，worker 位长 6 + 序列位长 6，
+  worker_id 经 `IDGEN_WORKER_ID` 配置）、全链路 `trace_id`、统一响应信封（`{code, message, data}`，
+  业务错误 `40000`；数据库 / 内部错误只记日志，响应统一 `50000` 通用文案）。
 
 ## 请求生命周期
 
@@ -66,7 +68,7 @@ insurance-service/
 ├── Cargo.toml                 # 工作区 / 依赖 / 发布配置
 ├── install.sql                # MySQL 建库脚本（全部业务表）
 ├── config/
-│   ├── app.toml               # 应用配置模板（server / database / jwt / crypto / log）
+│   ├── app.toml               # 应用配置模板（server / database / jwt / crypto / payment / log）
 │   └── bee.toml               # bee_rust 管线配置
 ├── docs/                      # 文档与架构图
 │   ├── social-preview.png     # GitHub Social Preview（1280×630）
@@ -79,8 +81,8 @@ insurance-service/
 ├── src/
 │   ├── main.rs                # 启动入口：init → 配置 → AppState → 路由 → serve
 │   ├── lib.rs                 # 库入口（集成测试依赖）
-│   ├── config.rs              # AppConfig：从环境变量 + config/app.toml 加载
-│   ├── routes.rs              # build_bee_router 路由表（38 个业务端点）
+│   ├── config.rs              # AppConfig：从环境变量加载（字段与 config/app.toml 对齐）
+│   ├── routes.rs              # build_bee_router 路由表（41 个业务端点）
 │   ├── db.rs                  # mysql_async 连接池与查询 / 事务封装
 │   ├── error.rs               # AppError（BadRequest / Unauthorized / NotFound / Business…）
 │   ├── response.rs            # 统一响应信封 ResponseEnvelope（{code, message, data}）
@@ -97,9 +99,8 @@ insurance-service/
 │   │   ├── claim.rs           #   理赔（报案 / 审核 / 资料）
 │   │   ├── admin.rs           #   运营后台（商品建档 / 上下架 / 审计查询）
 │   ├── middleware/
-│   │   ├── mod.rs             # Filter trait · RequestCtx
-│   │   ├── auth.rs            # JwtService · AuthFilter · RequireRoleFilter
-│   │   ├── security.rs        # SecurityFilter（入站安全扫描）
+│   │   ├── mod.rs             # 模块声明与请求链说明
+│   │   ├── auth.rs            # JwtService · Claims · Role · AuthUser
 │   │   ├── rate_limit.rs      # 固定窗口限流器
 │   │   └── trace.rs           # trace_id 生成 / 透传 + 请求日志
 │   ├── services/
@@ -110,37 +111,16 @@ insurance-service/
 │   │   ├── quote_service.rs   # 报价（费率表驱动）
 │   │   ├── order_service.rs   # 订单
 │   │   ├── payment_service.rs # 支付（预下单 / 回调）
-│   │   ├── policy_service.rs  # 保单（续保 / 退保 / 批改）
+│   │   ├── policy_service.rs  # 保单（签发 / 退保 / 受益人批改）
 │   │   ├── contract_service.rs # 电子合同（Mock 签署）
 │   │   ├── claim_service.rs   # 理赔（报案 / 审核 / 资料）
 │   ├── models/                # bee_orm Model（user / insurance_product / order / payment / policy / contract / claim…）
 │   ├── crypto/                # AES-256-GCM · Masker · argon2
 │   ├── providers/             # wechat（code2session）
 │   ├── search/                # searchable_impl（搜索序列化）
-│   └── utils/                 # validator · id_generator · idgen（snowflake）
+│   └── utils/                 # validator · idgen（snowflake）
 └── tests/
-    ├── common/mod.rs                # 测试共享设施（测试库连接 / JWT 配置 / 唯一值 / 清理）
-    ├── auth_service_test.rs         # 注册 / 登录 / 微信 stub（6 项）
-    ├── product_service_test.rs      # 商品增删改查 / 过滤 / 软删（5 项）
-    ├── search_service_test.rs       # 搜索命中 / 无果 / 分页（4 项）
-    ├── quote_service_test.rs        # 报价试算 / 详情 / 鉴权（3 项）
-    ├── security_test.rs             # JWT 校验 / 过期 / 角色 RBAC（18 项）
-    ├── api_auth_test.rs             # API 层鉴权 E2E（8 项）
-    ├── claim_service_test.rs        # 理赔报案 / 归属校验 / 分页（5 项）
-    ├── claim_review_test.rs         # 理赔审核 APPROVE / REJECT（5 项）
-    ├── admin_product_test.rs        # 商品上架 / 下架管理端（5 项）
-    ├── auth_fix_test.rs             # 认证修复回归：#10 修复项（8 项）
-    ├── product_fix_test.rs          # 产品模块修复回归：HTTP 层（4 项）
-    ├── contract_fix_test.rs         # 签约修复回归：sign-url Mock 真实化（4 项）
-    ├── trade_flow_test.rs           # 交易闭环：报价 → 下单 → 支付回调 → 保单签发（4 项）
-    ├── policy_lifecycle_test.rs     # 保单生命周期：续保 renew / 退保 lapse（9 项）
-    ├── user_center_test.rs          # 用户中心：改密 / 换绑手机（3 项）
-    ├── wechat_channel_test.rs       # 微信 code2session 渠道（2 项）
-    ├── c1_auth_extend_test.rs       # C1 认证扩展（6 项）
-    ├── c2_policy_endorse_test.rs    # C2 受益人批改（5 项）
-    ├── c3_claim_docs_test.rs        # C3 理赔资料上传 / 列表（5 项）
-    ├── c4_quote_rates_test.rs       # C4 费率表化报价（4 项）
-    ├── c5_audit_query_test.rs       # C5 运营端审计日志查询（1 项）
+    └── auth_tokens.rs         # 令牌生命周期：access / refresh 类型隔离与版本（1 项）
 ```
 
 ## 使用说明
@@ -148,7 +128,7 @@ insurance-service/
 ### 环境要求
 
 - Rust toolchain ≥ 1.87（`cargo --version` 检查）
-- MySQL 8.4（可选，集成测试与正式运行需要）
+- MySQL 8.4（正式运行需要；当前单元 / 集成测试均为惰性连接，不连库）
 
 ### 配置
 
@@ -158,9 +138,10 @@ insurance-service/
 |------|------|------|
 | `SERVER_HOST` / `SERVER_PORT` | 监听地址 | `0.0.0.0` / `8080` |
 | `DATABASE_URL` | MySQL 连接串（**必填**，如 `mysql://user:pass@127.0.0.1:3306/insurance_service`） | — |
-| `JWT_SECRET` / `JWT_ISSUER` | JWT 签名密钥 / 签发者 | — |
+| `JWT_SECRET` / `JWT_ISSUER` | JWT 签名密钥（**必填，至少 32 字节随机值**，如 `openssl rand -base64 48`）/ 签发者 | — |
 | `JWT_ACCESS_EXPIRY` / `JWT_REFRESH_EXPIRY` | access / refresh 有效秒数 | `7200` / `604800` |
 | `CRYPTO_MASTER_KEY` | AES-256-GCM 主密钥（口令 / 敏感字段加密） | — |
+| `PAYMENT_CALLBACK_TOKEN` | 支付回调校验令牌（请求头 `X-Callback-Token`）；留空表示禁用回调 | 空（禁用） |
 | `IDGEN_WORKER_ID` | snowflake 主键 worker id（多实例各分配唯一 0-63） | `0` |
 | `RUST_LOG` | 日志级别 | `info` |
 
@@ -184,12 +165,10 @@ curl http://127.0.0.1:8080/healthz   # 健康检查
 cargo test           # 全部测试（单元 + 集成）
 ```
 
-- 集成测试需要可用的 MySQL（`DATABASE_URL` 且已执行 `install.sql`）；未配置时**不会自动跳过，而是失败**。
-  测试规模以 `cargo test` 输出为准。集成测试覆盖：
-  认证（微信绑定/未配置降级/令牌吊销）、API 鉴权 E2E、交易闭环（报价→订单→支付回调→保单签发）、
-  保单生命周期（续保/退保/受益人批改）、限流、用户中心（改密/换绑）、费率报价、
-  理赔（资料上传）、审计查询、商品、修复回归等；单元测试覆盖限流窗口、加解密与脱敏、
-  身份证 / 手机号校验、snowflake 唯一性、微信响应解析、健康检查与统一 404 信封（均不依赖 DB）。
+- 当前测试规模以 `cargo test` 输出为准：44 个单元测试（lib）+ 1 个集成测试（`tests/auth_tokens.rs`）。
+  单元测试覆盖限流窗口、加解密与脱敏、身份证 / 手机号校验、snowflake 唯一性、搜索转义、
+  报价试算、支付回调令牌比较、JWT 类型隔离、健康检查与统一 404 信封等，均不依赖 MySQL
+  （`Db` 为惰性连接池，测试不会真正连库）。
 - 按项目约定（CLAUDE.md）：代码变更后**先跑测试、再提交**。
 
 ### 已实现 API 概览（阶段 0 → 1）
@@ -204,31 +183,47 @@ cargo test           # 全部测试（单元 + 集成）
 | POST | `/api/v1/auth/wechat/bind` | 微信绑定（登录态 + code → 写入 openid，冲突 409） |
 | POST | `/api/v1/auth/refresh` · `/api/v1/auth/logout` | 令牌刷新 / 注销 |
 | GET | `/api/v1/user/me` | 当前用户资料（Bearer Token） |
-| GET | `/api/v1/products` · `/api/v1/products/{id}` | 商品列表 / 详情 |
+| GET | `/api/v1/products` · `/api/v1/products/{id}` | 商品列表（公开，仅返回在售）/ 详情 |
 | GET | `/api/v1/products/{id}/clauses` | 商品条款 |
 | GET | `/api/v1/products/featured` | 精选商品 |
-| GET | `/api/v1/search?q=&index=&page=&size=` | 全文搜索 |
-| POST | `/api/v1/quotes` | 报价试算 |
+| GET | `/api/v1/search?keyword=&type=&page=&size=` | 全文搜索（`keyword` 必填） |
+| POST | `/api/v1/quotes` | 报价试算（服务端按 `quote_rates` 计费；未配置费率则拒绝） |
 | GET | `/api/v1/quotes/{id}` | 报价详情 |
 | POST | `/api/v1/orders` · GET `/api/v1/orders` | 下单 / 我的订单 |
 | GET | `/api/v1/orders/{id}` | 订单详情 |
 | POST | `/api/v1/payments/{order_id}/prepay` · `/pay` | 预支付 / 支付（Mock） |
 | POST | `/api/v1/payments/wechat/prepay` | 微信预支付（Mock 渠道） |
-| POST | `/api/v1/payments/callback/{provider}` | 支付回调 |
-| GET | `/api/v1/policies` · `/api/v1/policies/{id}` | 我的保单 / 保单详情 |
+| POST | `/api/v1/payments/callback/{provider}` | 支付回调（需 `X-Callback-Token`；Mock 阶段 provider 须为 `mock`） |
+| POST | `/api/v1/policies` | 保单签发（订单须已支付，幂等） |
+| GET | `/api/v1/policies` · `/api/v1/policies/{id}` | 我的保单（token 身份）/ 保单详情 |
+| POST | `/api/v1/policies/{id}/lapse` | 退保（ACTIVE → SURRENDERED，审计留痕） |
 | POST | `/api/v1/policies/{id}/beneficiaries` | 保单批改：受益人整单替换（POLICY_ENDORSE 审计） |
 | GET | `/api/v1/contracts/{id}` | 电子合同详情 |
 | POST | `/api/v1/contracts/{id}/sign` · GET `/sign-url` | 合同签署 / 签署 URL |
 | POST | `/api/v1/contracts/callback/{provider}` | 签署回调 |
 | POST | `/api/v1/claims` | 理赔报案（校验保单归属） |
-| GET | `/api/v1/claims?user_id=&page=&size=` | 我的理赔（分页） |
+| GET | `/api/v1/claims?page=&size=` | 我的理赔（分页，身份取 token） |
 | POST | `/api/v1/claims/{id}/review` | 理赔审核 APPROVE / REJECT（OPERATOR / ADMIN） |
 | POST · GET | `/api/v1/claims/{id}/documents` | 理赔资料上传 / 列表（归属校验） |
+| GET | `/api/v1/admin/products` | 运营商品列表（可按状态过滤，OPERATOR / ADMIN） |
 | POST | `/api/v1/admin/products` · `/api/v1/admin/products/{id}/status` | 商品建档 / 上下架（OPERATOR / ADMIN） |
 | GET | `/api/v1/admin/audit-logs` | 审计日志查询（OPERATOR / ADMIN，多条件过滤 + 分页） |
 
-完整路由表（共 38 个业务端点，含 `/user/me`、`/user/password`、`/user/phone`、运营后台 `/admin/*`）
+完整路由表（共 41 个业务端点，含 `/user/me`、`/user/password`、`/user/phone`、运营后台 `/admin/*`）
 见 `src/routes.rs` `build_bee_router()`；库表设计见 `docs/db-schema.md` 与 `install.sql`。
+列表 / 详情类接口的用户身份一律取自已认证 token，不接受 `user_id` / `operator_user_id` 查询参数。
+
+### 已知限制与部署注意
+
+- **MySQL 8.4 假设**：搜索分页使用窗口函数 `COUNT(*) OVER()`（MySQL 8.0+）；LIKE 的
+  `ESCAPE '\\'` 依赖 `sql_mode` 未启用 `NO_BACKSLASH_ESCAPES`（MySQL 默认关闭）。
+- **支付回调**：Mock 阶段预支付统一记录 `provider=MOCK`，所有渠道回调都必须走
+  `/payments/callback/mock` 并携带 `X-Callback-Token`；`PAYMENT_CALLBACK_TOKEN` 为空时回调全部拒绝。
+  重复预支付产生多笔支付单时，竞争回调会整笔回滚、支付单留在 `CREATED`，当前没有自动退款或对账路径。
+- **限流**：进程内固定窗口、按对端 socket IP（不读取可伪造的 `X-Forwarded-For`）；部署在反向代理后
+  时所有请求会共享代理 IP，需在代理层另做按客户端限流。
+- **安全边界**：服务不含入站 WAF / 内容扫描；安全依赖 JWT + RBAC、参数化查询、请求体大小限制
+  （2 MiB）与上述限流，公网部署前请按需补充网关层防护。
 
 ---
 
@@ -266,20 +261,20 @@ cargo test           # 全部测试（单元 + 集成）
 | 运营统计 | 无 | `POST /api/v1/admin/stats` |
 | 浏览器展示面 | 纯 JSON，无 HTML | `GET /` 落地页、`/favicon.svg`、`/pet/{slug}`、HTML 错误页、吉祥物素材 |
 | 扩展数据模型 | 14 张表 | 19 张表：+ 产品分类 / 分类关系 / 被保人 / 合同签署方 / 搜索同步日志 |
-| 代码规模 | 56 个 Rust 源文件 / 7,059 行 | 74 个 / 8,616 行 |
-| 路由 | 39 条业务 + `/healthz` = 40 | 40 条业务（+`/admin/stats`）+ `/healthz` + 3 条浏览器路由 = 44 |
+| 代码规模 | 54 个 Rust 源文件 / 7,988 行 | 74 个 / 8,616 行 |
+| 路由 | 41 条业务 + `/healthz` = 42 | 42 条业务（含 `/admin/stats`）+ `/healthz` + 3 条浏览器路由 |
 | 控制器 / 模型 / 服务 | 11 / 13 / 10 | 12 / 18 / 11 |
-| 测试 | HEAD 23 个测试文件 / 115 个用例；当前工作区 `tests/` 为空 | 当前工作区 `tests/` 为空；README 标注 26 单元 + 115 集成（以交付版本为准） |
+| 测试 | 44 个单元测试 + 1 个集成测试（`tests/auth_tokens.rs`） | 商业版当前快照未包含测试（以交付版本为准）；无 CI 配置 |
 
 ### 多维度对比 / Multi-dimensional Comparison
 
 | 维度 | 开源版 | 商业版 |
 |------|--------|--------|
-| 功能覆盖 | 39 条业务路由 + `/healthz`；11 控制器 / 13 模型 / 10 服务 / 14 表；核心投保交易闭环 | 40 条业务路由（+ `/admin/stats`）+ 浏览器路由/静态站点；12 / 18 / 11 / 19；多 5 张扩展表 |
-| 安全防护 | JWT access/refresh + RBAC；固定窗口限流 300 次/60s/IP；security-rust 27 检测器扫描 path/query/body；trace_id；AES-256-GCM + argon2；validator；审计日志 | 安全中间件、限流、加密、校验源码与开源版一致；新增公开 HTML/宠物/favicon 面与运营统计接口（OPERATOR/ADMIN），暴露面略大 |
+| 功能覆盖 | 41 条业务路由 + `/healthz`；11 控制器 / 13 模型 / 10 服务 / 14 表；核心投保交易闭环 | 42 条业务路由（含 `/admin/stats`）+ 浏览器路由/静态站点；12 / 18 / 11 / 19；多 5 张扩展表 |
+| 安全防护 | JWT access/refresh + RBAC（Bearer 鉴权）；固定窗口限流 300 次/60s/IP（进程内、按对端 IP）；trace_id；AES-256-GCM + argon2；validator；审计日志；内部错误不外泄 | 安全中间件、限流、加密、校验源码与开源版一致；新增公开 HTML/宠物/favicon 面与运营统计接口（OPERATOR/ADMIN），暴露面略大 |
 | 性能与规模 | axum + tokio；mysql_async 连接池；进程内 MemoryCache；进程内固定窗口限流；无后台任务 | 运行时基本相同；配置新增 Redis/OpenSearch，但 AppState 仍用 MemoryCache，SyncWorker 仅定义未启动；多实例共享缓存/限流未落地 |
 | 数据与检索 | 14 表；搜索为 MySQL LIKE；无全文索引/同步 | 19 表（+产品分类/关系、被保人、合同签署方、搜索同步日志）；OpenSearch 同步 Worker 与 rust_scout 依赖为预留，SearchService 仍走 MySQL LIKE |
-| 测试与质量 | HEAD 有 23 个测试文件、115 个用例（18 `#[test]` + 97 `#[tokio::test]`）；当前工作区 `tests/` 为空（历史删除未提交）；无 CI 配置 | 当前工作区 `tests/` 为空；README 标注 26 单元 + 115 集成（含统计/索引路由），当前快照无法直接运行；无 CI 配置 |
+| 测试与质量 | 44 个单元测试 + 1 个集成测试（`tests/auth_tokens.rs`），全部不依赖 MySQL；无 CI 配置 | 商业版当前快照未包含测试（以交付版本为准）；无 CI 配置 |
 | 部署与运维 | 无 Dockerfile/compose/CI；`config/app.toml` + `bee.toml`、`install.sql`、`/healthz`、`scripts/release.sh`；单进程 | 同左；新增 Redis/OpenSearch 可选环境变量；仍无 compose、迁移 runner、CI |
 | 多端与国际化 | 纯 JSON API；无 HTML 面、无客户端源码、无 i18n | 增加 HTML 落地页、宠物表情、favicon、HTML 错误页与 `site/` 静态站；无 Flutter/小程序源码；无 i18n |
 | 扩展性与二次开发 | 仅微信 code2session provider；支付/电子签为内联 Mock；路由/控制器结构简单 | `PayProvider` / `ElectronicSignature` trait + 微信/易签/Mock 适配器；统计 service；搜索同步 Worker 预留；路由/控制器结构同源；无 OpenAPI 文件 |
@@ -290,11 +285,11 @@ cargo test           # 全部测试（单元 + 集成）
 
 | Dimension | Open edition | Commercial edition |
 |---|---|---|
-| Functional coverage | 39 business routes + `/healthz`; 11 controllers / 13 models / 10 services / 14 tables; core insurance transaction loop | 40 business routes (+ `/admin/stats`) + browser routes/static site; 12 / 18 / 11 / 19; 5 extra tables |
-| Security | JWT access/refresh + RBAC; fixed-window 300 req/60s/IP; security-rust 27 detectors over path/query/body; trace ID; AES-256-GCM + argon2; validator; audit logs | Same middleware, rate-limit, crypto and validation source; larger public HTML/pet/favicon surface plus stats endpoint (OPERATOR/ADMIN) |
+| Functional coverage | 41 business routes + `/healthz`; 11 controllers / 13 models / 10 services / 14 tables; core insurance transaction loop | 42 business routes (including `/admin/stats`) + browser routes/static site; 12 / 18 / 11 / 19; 5 extra tables |
+| Security | JWT access/refresh + RBAC (Bearer auth); fixed-window 300 req/60s/IP (in-process, peer IP); trace ID; AES-256-GCM + argon2; validator; audit logs; internal errors not exposed | Same middleware, rate-limit, crypto and validation source; larger public HTML/pet/favicon surface plus stats endpoint (OPERATOR/ADMIN) |
 | Performance / scale | axum + tokio; mysql_async pool; in-process MemoryCache and rate limiter; no background jobs | Effectively the same runtime; Redis/OpenSearch config exists, but AppState still uses MemoryCache and SyncWorker is not spawned; no shared multi-instance cache/limit |
 | Data / search | 14 tables; MySQL LIKE search | 19 tables (+ product categories/relation, policy holder, contract signer, search sync log); OpenSearch sync Worker and rust_scout are scaffolding; SearchService still uses MySQL LIKE |
-| Tests / quality | HEAD: 23 test files / 115 cases (18 `#[test]` + 97 `#[tokio::test]`); working tree `tests/` empty; no CI | Working tree `tests/` empty; README claims 26 unit + 115 integration (including stats/index routes), not runnable in this snapshot; no CI |
+| Tests / quality | 44 unit tests + 1 integration test (`tests/auth_tokens.rs`), none require MySQL; no CI | Commercial snapshot ships without tests (delivery-dependent); no CI |
 | Deployment / ops | No Dockerfile/compose/CI; app.toml + bee.toml, install.sql, `/healthz`, release.sh; single process | Same; adds optional Redis/OpenSearch env vars; still no compose, migration runner or CI |
 | Clients / i18n | JSON API only; no HTML surface, client source or i18n | Adds HTML landing/pet/favicon/error pages and `site/` static site; no Flutter/mini-program source; no i18n |
 | Extensibility | WeChat code2session provider only; inline mock payment/e-sign | `PayProvider` / `ElectronicSignature` traits + WeChat/Escqian/Mock adapters; stats service; search sync Worker scaffolding; same route/controller structure; no OpenAPI file |
@@ -313,7 +308,7 @@ cargo test           # 全部测试（单元 + 集成）
 
 ### 开源版保留
 
-- 用户认证 / JWT / RBAC、保险商品、报价、订单、支付回调（Mock）、保单、电子合同（Mock）、理赔、审计、MySQL LIKE 搜索、AES-256-GCM 加密、限流与安全扫描。
+- 用户认证 / JWT / RBAC、保险商品、报价、订单、支付回调（Mock）、保单、电子合同（Mock）、理赔、审计、MySQL LIKE 搜索、AES-256-GCM 加密与限流。
 - 适合个人学习、研究、二次开发原型；生产或商业部署需取得商业授权。
 
 **商业版授权与交付条款请联系：erik@erik.xyz**

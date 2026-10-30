@@ -91,39 +91,6 @@ impl Masker {
         out
     }
 
-    /// 身份证号脱敏：110***********1234（保留前 3 后 4）
-    pub fn id_card(id: &str) -> String {
-        let chars: Vec<char> = id.chars().collect();
-        if chars.len() < 8 {
-            return id.to_string();
-        }
-        let mut out = String::new();
-        for (i, c) in chars.iter().enumerate() {
-            if i < 3 || i >= chars.len() - 4 {
-                out.push(*c);
-            } else {
-                out.push('*');
-            }
-        }
-        out
-    }
-
-    /// 银行卡号脱敏：保留尾号 4 位
-    pub fn bank_card(card: &str) -> String {
-        let chars: Vec<char> = card.chars().collect();
-        if chars.len() < 5 {
-            return card.to_string();
-        }
-        let mut out = String::new();
-        for (i, c) in chars.iter().enumerate() {
-            if i >= chars.len() - 4 {
-                out.push(*c);
-            } else {
-                out.push('*');
-            }
-        }
-        out
-    }
 }
 
 /// 随机 12 字节 IV（使用操作系统 CSPRNG）
@@ -151,6 +118,5 @@ mod tests {
     #[test]
     fn masking() {
         assert_eq!(Masker::phone("13800138000"), "138****8000");
-        assert_eq!(Masker::id_card("110101199001011234"), "110***********1234");
     }
 }

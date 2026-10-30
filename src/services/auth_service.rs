@@ -1,7 +1,7 @@
-//! 认证服务：注册 / 登录 / 微信登录 stub + JWT 签发（对齐 backend-architecture.md §7）
+//! 认证服务：注册 / 登录 / 微信登录 + JWT 签发（对齐 backend-architecture.md §7）
 //!
-//! 说明：阶段 0 未接入 bee_orm，注册/登录的持久化操作用 `todo!()` 占位，但
-//! 密码哈希（argon2）、JWT 签发/校验、令牌模型为完整可编译实现。
+//! 持久化经 mysql_async `Db` 完成；密码哈希（argon2）、JWT 签发/校验、
+//! 令牌版本化吊销均为完整实现。
 
 use argon2::Argon2;
 use argon2::password_hash::{

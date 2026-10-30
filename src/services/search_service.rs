@@ -123,13 +123,6 @@ impl SearchService {
     }
 }
 
-impl Default for SearchService {
-    fn default() -> Self {
-        // 仅供内部测试/占位；业务入口经 AppState 注入真实 Db
-        unreachable!("SearchService 必须经 AppState 注入 Db")
-    }
-}
-
 /// COUNT(*) 首列读取辅助
 struct CountRow(u64);
 
@@ -141,14 +134,18 @@ impl FromRow for CountRow {
 
 /// 产品搜索 WHERE 子句与参数：固定只检索在售且开启搜索的产品。
 /// 关键字内 LIKE 元字符经 `escape_like` 转义，SQL 显式 `ESCAPE '\'`。
+/// 在售状态取 `InsuranceProduct::STATUS_ON_SALE`，与商品目录共用同一常量。
 fn product_search_where(keyword: &str) -> (String, Vec<String>) {
-    const WHERE: &str = concat!(
-        "deleted_at IS NULL AND status = 'ON_SALE' AND search_enabled = 1 ",
-        r"AND (name LIKE ? ESCAPE '\\' OR subtitle LIKE ? ESCAPE '\\' ",
-        r"OR description LIKE ? ESCAPE '\\' OR insurer_name LIKE ? ESCAPE '\\' ",
-        r"OR product_code LIKE ? ESCAPE '\\')",
+    let where_sql = format!(
+        concat!(
+            "deleted_at IS NULL AND status = '{}' AND search_enabled = 1 ",
+            r"AND (name LIKE ? ESCAPE '\\' OR subtitle LIKE ? ESCAPE '\\' ",
+            r"OR description LIKE ? ESCAPE '\\' OR insurer_name LIKE ? ESCAPE '\\' ",
+            r"OR product_code LIKE ? ESCAPE '\\')",
+        ),
+        InsuranceProduct::STATUS_ON_SALE
     );
-    (WHERE.to_string(), vec![format!("%{}%", escape_like(keyword)); 5])
+    (where_sql, vec![format!("%{}%", escape_like(keyword)); 5])
 }
 
 /// 转义 LIKE 元字符（`\`、`%`、`_`），与 SQL 的 `ESCAPE '\'` 配套。

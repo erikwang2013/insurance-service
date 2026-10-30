@@ -17,5 +17,9 @@ refresh_expiry = 604800
 [crypto]
 master_key = "${CRYPTO_MASTER_KEY}"
 
+[payment]
+# 支付回调校验令牌（请求头 X-Callback-Token）；留空表示禁用支付回调
+callback_token = "${PAYMENT_CALLBACK_TOKEN}"
+
 [log]
 level = "info"

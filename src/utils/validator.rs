@@ -27,11 +27,6 @@ pub fn is_valid_id_card(id: &str) -> bool {
     last.is_ascii_digit() || last == b'X' || last == b'x'
 }
 
-/// 金额校验：必须 > 0 且保留两位小数语义（rust_decimal）
-pub fn is_valid_amount(amount: rust_decimal::Decimal) -> bool {
-    amount > rust_decimal::Decimal::ZERO && !amount.is_sign_negative()
-}
-
 /// 校验手机号，失败返回 Validation 错误
 pub fn check_phone(phone: &str) -> Result<()> {
     if is_valid_phone(phone) {

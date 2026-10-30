@@ -164,10 +164,10 @@ impl AppState {
     }
 }
 
-/// 管线级错误的 JSON 信封兜底（内部错误 50000）
+/// 管线级错误的 JSON 信封兜底（内部错误 50000；细节只进日志）
 fn internal_error_response(e: RouterError) -> Response {
-    let envelope: ApiResponse = ResponseEnvelope::err(50000, format!("服务器内部错误: {e}"));
-    axum::Json(envelope).into_response()
+    tracing::error!(error = %e, "bee 管线错误");
+    json_envelope(50000, "服务器内部错误")
 }
 
 /// 解析 query 字符串为键值表（百分号解码与 `+` → 空格由 serde_urlencoded 完成；
@@ -199,9 +199,15 @@ pub(crate) fn json_envelope(code: i32, msg: impl Into<String>) -> Response {
     axum::Json(envelope).into_response()
 }
 
-/// 业务错误 → 信封响应
+/// 业务错误 → 信封响应；数据库/内部错误只进日志，响应统一为 50000 通用文案
 pub(crate) fn error_response(e: &crate::error::AppError) -> Response {
-    json_envelope(e.code(), e.to_string())
+    match e {
+        crate::error::AppError::Db(_) | crate::error::AppError::Internal(_) => {
+            tracing::error!(error = %e, "请求处理失败（数据库/内部错误）");
+            json_envelope(50000, "服务器内部错误")
+        }
+        _ => json_envelope(e.code(), e.to_string()),
+    }
 }
 
 /// 序列化成功数据 → 信封响应（失败视为内部错误）
@@ -319,16 +325,26 @@ pub async fn contract_handler(
     state.run(state.contract.as_ref(), params, request).await
 }
 
-pub async fn healthz_handler() -> Response {
-    ok_response(serde_json::json!({
-        "status": "ok",
-        "service": "insurance-service"
-    }))
-}
-
 #[cfg(test)]
 mod tests {
-    use super::query_map;
+    use super::{error_response, query_map};
+    use crate::error::AppError;
+
+    /// 数据库错误的 SQL/schema 细节不得出现在响应体（只进日志）
+    #[tokio::test]
+    async fn db_error_response_hides_details() {
+        let resp = error_response(&AppError::Db("secret schema".into()));
+        let bytes = axum::body::to_bytes(resp.into_body(), 1024 * 1024)
+            .await
+            .unwrap();
+        let body: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(body["code"], 50000);
+        assert_eq!(body["message"], "服务器内部错误");
+        assert!(
+            !body.to_string().contains("secret schema"),
+            "响应不得包含数据库细节: {body}"
+        );
+    }
 
     /// 百分号编码（中文关键字）与 `+` 均正确解码；缺省/非法输入回退空表
     #[test]

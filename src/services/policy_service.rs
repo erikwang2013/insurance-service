@@ -1,11 +1,10 @@
 //! 保单服务（交易闭环）
 //!
 //! 支付成功后签发保单：校验订单已 PAID → INSERT policy → 订单进 POLICY_ISSUED → 回读。
-//! 另提供续保（renew，原单生成一条 RENEW 保单并接续保障期）与退保（lapse，
-//! ACTIVE → SURRENDERED）。状态机见 `Policy` 模型注释：
+//! 另提供退保（lapse，ACTIVE → SURRENDERED）与受益人批改。状态机见 `Policy` 模型注释：
 //! `PENDING_ISSUE → ACTIVE → EXPIRED / CANCELLED / SURRENDERED / LAPSED`。
 
-use chrono::{DateTime, Datelike, NaiveDate, NaiveDateTime, Utc};
+use chrono::{DateTime, NaiveDate, NaiveDateTime, Utc};
 use mysql_async::prelude::Queryable;
 use mysql_async::Value;
 use mysql_async::Row;
@@ -18,8 +17,6 @@ use crate::db::Db;
 use crate::error::{AppError, Result};
 use crate::models::policy::{validate_beneficiaries, Beneficiary, EndorseBeneficiariesReq, Policy};
 
-/// 签发类型常量（policies.issue_type）：续保单
-const ISSUE_TYPE_RENEW: &str = "RENEW";
 /// 审计动作常量（audit_logs.action）：退保 / 批改-受益人变更
 const POLICY_ACTION_LAPSE: &str = "POLICY_LAPSE";
 const POLICY_ACTION_ENDORSE: &str = "POLICY_ENDORSE";
@@ -211,102 +208,6 @@ impl PolicyService {
         rows.iter().map(row_to_policy).collect::<Result<Vec<_>>>()
     }
 
-    /// 续保：校验原保单归属本人、is_renewable=1 且状态可续（ACTIVE 在保 / EXPIRED 已满期）
-    /// 后，生成一条 issue_type=RENEW 的新保单：
-    /// - 保障起期：原单仍在保 → 原止期次日无缝接续；原单止期已过 → 从今天起保；
-    /// - 保障止期：起期 + term_months 个月（对齐原单缴费期）；
-    /// - 初始状态 ACTIVE（与 issue() 新单一致），is_renewable 继承原单。
-    ///
-    /// 简化说明（续保不新建订单/报价）：order_id/quote_id 沿用原单以满足外键约束，
-    /// 保额/保费沿用原单数值；若需按新报价续保，应上层先走报价-下单-支付再签发。
-    pub async fn renew(&self, user_id: i64, policy_id: i64) -> Result<Policy> {
-        let new_id: i64 = self
-            .db
-            .with_tx(|tx| {
-                Box::pin(async move {
-                    // 1) 取原保单并校验归属
-                    let row: Option<Row> = tx
-                        .exec_first(
-                            "SELECT * FROM policies WHERE id = ? AND deleted_at IS NULL LIMIT 1",
-                            vec![policy_id],
-                        )
-                        .await
-                        .map_err(db_error)?;
-                    let old = match row {
-                        Some(r) => row_to_policy(&r)?,
-                        None => return Err(AppError::business("保单不存在")),
-                    };
-                    if old.user_id != user_id {
-                        return Err(AppError::Forbidden);
-                    }
-
-                    // 2) 可续校验：开放续保标记 + 状态在保或已满期
-                    if !old.is_renewable {
-                        return Err(AppError::business("该保单不支持续保"));
-                    }
-                    let can_renew = old.status == Policy::STATUS_ACTIVE
-                        || old.status == Policy::STATUS_EXPIRED;
-                    if !can_renew {
-                        return Err(AppError::state_conflict("当前保单状态不可续保"));
-                    }
-
-                    // 3) 新保障期：原止期次日与今天取较晚者（无缝接续 / 过期从今天起）
-                    let today = Utc::now().date_naive();
-                    let effective = old
-                        .expire_date
-                        .checked_add_days(chrono::Days::new(1))
-                        .unwrap_or(old.expire_date)
-                        .max(today);
-                    let expire = add_months(effective, old.term_months);
-
-                    // 4) 生成续保保单行
-                    let policy_no = Self::policy_no();
-                    let now = Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
-                    let ed = effective.format("%Y-%m-%d").to_string();
-                    let xd = expire.format("%Y-%m-%d").to_string();
-                    // 主键由应用层 snowflake 预生成后显式插入（全库自增迁移，见 idgen）
-                    let new_id = crate::utils::idgen::next_id();
-                    tx.exec_drop(
-                        "INSERT INTO policies (id, policy_no, order_id, quote_id, user_id, holder_id, \
-                         product_id, product_name, holder_name, insurance_amount, term_months, \
-                         premium, effective_date, expire_date, status, issue_type, is_renewable, \
-                         premium_detail, issued_at, created_at, updated_at) \
-                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                        vec![
-                            new_id.into(),
-                            Value::from(&policy_no),
-                            Value::from(old.order_id),
-                            Value::from(old.quote_id),
-                            Value::from(user_id),
-                            value_opt_int(old.holder_id),
-                            Value::from(old.product_id),
-                            Value::from(&old.product_name),
-                            Value::from(&old.holder_name),
-                            Value::from(old.insurance_amount.to_string()),
-                            Value::from(old.term_months),
-                            Value::from(old.premium.to_string()),
-                            Value::from(&ed),
-                            Value::from(&xd),
-                            Value::from(Policy::STATUS_ACTIVE.to_string()),
-                            Value::from(ISSUE_TYPE_RENEW),
-                            Value::from(old.is_renewable),
-                            json_val(old.premium_detail),
-                            Value::from(&now),
-                            Value::from(&now),
-                            Value::from(&now),
-                        ],
-                    )
-                    .await
-                    .map_err(db_error)?;
-
-                    Ok(new_id)
-                })
-            })
-            .await?;
-
-        self.by_id(new_id, user_id).await
-    }
-
     /// 退保：校验原保单归属本人且状态为 ACTIVE（在保）后，置为 SURRENDERED（退保）。
     ///
     /// - 状态机中 LAPSED 为未缴保费等致保单失效的另一终态，用户主动退保走 SURRENDERED；
@@ -471,18 +372,6 @@ fn json_opt_row(row: &Row, col: &str) -> Option<serde_json::Value> {
 }
 fn value_opt_int(v: Option<i64>) -> Value {
     v.map(Value::from).unwrap_or(Value::NULL)
-}
-
-/// 日期加整月：跨年进位，目标月天数不足时钳制到月末（如 1/31 + 1 月 → 2/28/29）。
-fn add_months(d: NaiveDate, months: i32) -> NaiveDate {
-    let months0 = d.year() * 12 + d.month0() as i32 + months;
-    let (y, m0) = (months0.div_euclid(12), months0.rem_euclid(12) as u32);
-    let last = if m0 == 1 && (y % 4 == 0 && (y % 100 != 0 || y % 400 == 0)) {
-        29
-    } else {
-        [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][m0 as usize]
-    };
-    NaiveDate::from_ymd_opt(y, m0 + 1, d.day().min(last)).expect("月份日期恒合法")
 }
 
 fn bens_json(rows: &[Row]) -> serde_json::Value {

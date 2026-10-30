@@ -16,7 +16,3 @@ pub mod routes;
 pub mod search;
 pub mod services;
 pub mod utils;
-
-// controllers 依赖 bee_rust Controller trait，bee-rust 不可用时编译失败。
-// 阶段 0 以骨架/接口为主，控制器在 bee-rust 可拉取后补齐。
-// pub mod controllers;

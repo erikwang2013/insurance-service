@@ -1664,18 +1664,14 @@ dependencies = [
  "idgen_rs",
  "jsonwebtoken",
  "mysql_async",
- "regex",
  "reqwest",
  "rust_decimal",
- "security-rust",
  "serde",
  "serde_json",
  "serde_urlencoded",
- "thiserror 2.0.20",
  "tokio",
  "tower",
  "tracing",
- "tracing-subscriber",
  "uuid",
 ]
 
