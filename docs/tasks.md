@@ -50,10 +50,10 @@
   （已移除 `RequireRoleFilter` 抽象）。
 - 身份由令牌派生：列表 / 详情不接受 `user_id` / `reviewer_id` / `operator_user_id` 作为身份参数。
 - 支付回调：`X-Callback-Token` 与 `PAYMENT_CALLBACK_TOKEN` 常量时间比较；为空禁用回调；
-  成功回调事务内完成支付 + 订单状态，重复回调回滚 `40900`。
+  成功回调事务内完成支付 + 订单状态；同一支付单/交易号重放幂等（code 0），不同支付单在订单已 PAID 后再回调才回滚 `40900` 并留在 `CREATED`。
 - 保单：订单 PAID 后签发（幂等）；`POST /policies/{id}/lapse` 退保；续保暂未开放。
 - 运营：`GET /admin/products` 支持状态过滤；商品建档 / 上下架 / 审计查询。
-- 搜索加固：仅 `ON_SALE` + `search_enabled=1`；转义 `\ % _` 并 `ESCAPE '\'`；
+- 搜索加固：仅 `ON_SALE` + `search_enabled=1`；转义 `\ % _` 并 `ESCAPE '\\'`；
   `COUNT(*) OVER()` + 空页 COUNT 兜底；查询参数百分号解码。
 - 主键切换 snowflake（idgen_rs 无锁生成）。
 - `bee-rust` 1.0.6 vendored 至 `vendor/bee-rust`（快照 `93dd5c57`），构建不依赖 GitHub git。

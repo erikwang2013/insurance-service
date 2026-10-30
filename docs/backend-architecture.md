@@ -134,6 +134,7 @@ Trace（最外层）→ RateLimit → JWT 认证（RBAC）→ Controller
 
 - 报价：产品必须 `ON_SALE`，保额与保障期必须落在产品区间内，且 `quote_rates` 必须有命中费率行；
   保费恒由服务端按 `保额 × 费率` 四舍五入到 2 位小数，客户端 `premium` 被忽略；报价 7 天过期。
+  生效日期不得早于报价日；保障止期由服务端按「生效日期 + `term_months`」计算，客户端 `expire_date` 被忽略。
 - 订单：`discount_amount` 恒为 0，客户端优惠被忽略；报价必须 PENDING 且未过期，事务内锁定并
   一次性置为 `CONVERTED`；应付金额等于报价保费。
 
@@ -143,13 +144,14 @@ Trace（最外层）→ RateLimit → JWT 认证（RBAC）→ Controller
   缺省 MOCK；本阶段 provider 恒为 MOCK，所有渠道回调都走 `/api/v1/payments/callback/mock`。
 - 回调要求 `PAYMENT_CALLBACK_TOKEN` 非空且请求头 `X-Callback-Token` 常量时间匹配；token 为空时回调全部拒绝。
   回调必须显式声明成功、provider 路径与支付单一致、交易号必填且按 provider 唯一。
-- 成功回调在同一事务内提交支付 `SUCCESS` + 订单 `PAID`；已支付订单的第二次回调整笔回滚并返回 `40900`，
-  其支付单保持 `CREATED`。失败回调从不写 `paid_at`。
+- 成功回调在同一事务内提交支付 `SUCCESS` + 订单 `PAID`。同一支付单、同一交易号的重放返回当前行（code 0，幂等）；
+  只有不同支付单在订单已 `PAID` 后再回调才整笔回滚并返回 `40900`，该支付单保持 `CREATED`。失败回调从不写 `paid_at`。
 - 重复预支付产生多笔支付单时，竞争回调的败者保持 `CREATED`；当前没有自动退款或对账路径。
 
 ### 8.3 保单
 
 - 签发：`POST /api/v1/policies { order_id }` 要求订单已 `PAID`，事务内锁定订单；幂等（重试返回同一保单）。
+  保单止期由订单 `term_months` 计算，不采用客户端日期。
 - 退保：`POST /api/v1/policies/{id}/lapse`，ACTIVE → SURRENDERED，写 `POLICY_LAPSE` 审计。
 - 续保暂未开放：需重新走报价 → 订单 → 支付流程；`is_renewable` 列保留。
 - 受益人批改：`POST /api/v1/policies/{id}/beneficiaries` 整单替换，写 `POLICY_ENDORSE` 审计。
@@ -161,7 +163,7 @@ Trace（最外层）→ RateLimit → JWT 认证（RBAC）→ Controller
 
 ### 8.5 理赔
 
-- 报案：要求保单 ACTIVE；事故日期（缺省今天）落在生效日..失效日之间；
+- 报案：要求保单 ACTIVE；事故日期（缺省今天）落在生效日..失效日之间且不得晚于今天；
   `0 < claim_amount <= insurance_amount`。
 - 审核（OPERATOR / ADMIN）：`0 < approved <= claim_amount <= insurance_amount`；
   UPDATE 以 `status = 'SUBMITTED'` 为条件，重复审核返回 `40900`。

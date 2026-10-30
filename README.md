@@ -44,13 +44,13 @@
 - **用户与认证**：注册（用户名唯一 + argon2 口令哈希）、登录（账号密码；微信 openid 绑定登录闭环——code2session 校验 + 绑定 + 按 openid 直登，凭据未配置时降级报错）、
   JWT 双令牌（access 短时效 + refresh 长时效，token_version 版本化——logout / 改密 / 换绑即吊销旧令牌）与 RBAC 角色（USER / AGENT / OPERATOR / ADMIN）。
 - **保险商品**：公开列表（仅返回在售，分页）/ 精选位 / 详情 / 关联条款阅读；运营后台按状态查询、建档与上架 / 下架 / 停售（OPERATOR / ADMIN）。
-- **报价**：费率表驱动（`quote_rates` 按产品 / 保障期 / 保额区间定价）；未配置费率行则拒绝报价，保费一律由服务端按 保额 × 费率 计算，不接受客户端保费。
+- **报价**：费率表驱动（`quote_rates` 按产品 / 保障期 / 保额区间定价）；未配置费率行则拒绝报价，保费一律由服务端按 保额 × 费率 计算，不接受客户端保费；保障止期由服务端按「生效日期 + 保障期」计算。
 - **全文搜索**：MySQL LIKE（带分页保护）。
 - **交易闭环**：报价 → 订单 → 支付（预下单 / 支付 / 回调）API 已挂载；微信渠道当前为 Mock，真实渠道规划中。
 - **保单与契约**：保单签发（订单须已支付，幂等）/ 列表 / 详情 / 退保（`POLICY_LAPSE` 审计留痕）、
   受益人批改（`POLICY_ENDORSE` 审计留痕）、电子合同内联 Mock 签署与签署回调 API 已挂载；
   续保暂未开放（需重新走报价 → 订单 → 支付流程）；外部电子签渠道未接入。
-- **理赔**：报案（`CLM` 单号，校验保单归属）、我的理赔列表、审核（APPROVE / REJECT，需 OPERATOR / ADMIN）、资料上传 / 列表（`claim_documents` 元数据）已实现。
+- **理赔**：报案（`CLM` 单号，校验保单归属；事故日期须在保障期内且不晚于今天）、我的理赔列表、审核（APPROVE / REJECT，需 OPERATOR / ADMIN）、资料上传 / 列表（`claim_documents` 元数据）已实现。
 - **运营 / 审计**：运营后台 API、`audit_logs` 全量留痕 + 审计查询接口（`/api/v1/admin/audit-logs`，OPERATOR / ADMIN）。
 - **横切能力**：JWT 认证（受保护路由需 `Authorization: Bearer`）/ RBAC、参数化查询、
   `users.phone_enc` 字段级 AES-256-GCM 加密与脱敏、令牌精确过期（leeway=0）、
