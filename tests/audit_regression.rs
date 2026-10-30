@@ -136,11 +136,14 @@ async fn insert_user(db: &Db, role: &str) -> i64 {
     id
 }
 
-/// 插入产品（`status` 由调用方指定），返回 (id, 唯一产品编码, 唯一中文名称)。
-async fn insert_product(db: &Db, status: &str) -> (i64, String, String) {
+/// 插入产品（`status` 由调用方指定；`name` 为 None 时用唯一默认名），
+/// 返回 (id, 唯一产品编码, 名称)。
+async fn insert_product(db: &Db, status: &str, name: Option<&str>) -> (i64, String, String) {
     let id = next_id();
     let code = format!("AUDIT{id}");
-    let name = format!("保险回归{id}");
+    let name = name
+        .map(str::to_owned)
+        .unwrap_or_else(|| format!("保险回归{id}"));
     db.exec_drop(
         "INSERT INTO insurance_products \
          (id, product_code, name, product_type, status, search_enabled, \
@@ -248,7 +251,7 @@ async fn full_transaction_flow_and_ownership() {
     let user_a = insert_user(db, User::ROLE_USER).await;
     let user_b = insert_user(db, User::ROLE_USER).await;
     let operator = insert_user(db, User::ROLE_OPERATOR).await;
-    let (product, _, _) = insert_product(db, InsuranceProduct::STATUS_ON_SALE).await;
+    let (product, _, _) = insert_product(db, InsuranceProduct::STATUS_ON_SALE, None).await;
     insert_rate(db, product, 12, "0.01").await;
 
     let token_a = access_token(&state, user_a, Role::User);
@@ -259,6 +262,18 @@ async fn full_transaction_flow_and_ownership() {
     let (quote, order, pay1) = order_fixture(&app, &token_a, product).await;
     let quote_id = quote["data"]["id"].as_i64().expect("报价 id");
     let order_id = order["data"]["id"].as_i64().expect("订单 id");
+
+    // 报价已被订单锁定转化：再次下单必须拒绝
+    assert_eq!(row_status(db, "quotes", quote_id).await, "CONVERTED");
+    let (_, retry) = call(
+        &app,
+        Method::POST,
+        "/api/v1/orders",
+        Some(&token_a),
+        Some(json!({ "quote_id": quote_id })),
+    )
+    .await;
+    assert_ne!(retry["code"], 0, "已消费报价不应再次下单: {retry}");
 
     // 服务端定价：忽略请求体的 discount_amount，实付=应付=保费
     assert_eq!(dec(&quote["data"]["premium"]), Decimal::from(100));
@@ -437,10 +452,19 @@ async fn public_catalog_hides_drafts_and_search_pagination_is_stable() {
     let app = build_bee_router(state.clone());
     let db = &state.db;
 
-    let (on_sale, code, name) = insert_product(db, InsuranceProduct::STATUS_ON_SALE).await;
-    let (draft, _, _) = insert_product(db, InsuranceProduct::STATUS_DRAFT).await;
+    let (on_sale, code, name) = insert_product(db, InsuranceProduct::STATUS_ON_SALE, None).await;
+    // 非在售商品名称包含在售商品的唯一关键字：若列表/搜索漏掉状态过滤即会命中
+    let draft_name = format!("{name}草稿");
+    let (draft, _, _) = insert_product(db, InsuranceProduct::STATUS_DRAFT, Some(&draft_name)).await;
+    let off_shelf_name = format!("{name}下架");
+    let (off_shelf, _, _) = insert_product(
+        db,
+        InsuranceProduct::STATUS_OFF_SHELF,
+        Some(&off_shelf_name),
+    )
+    .await;
 
-    // 公开列表忽略 status=DRAFT，只返回在售
+    // 公开列表忽略 status=DRAFT，只返回在售；DRAFT / OFF_SHELF 均不可见
     let (_, list) = call(
         &app,
         Method::GET,
@@ -455,29 +479,38 @@ async fn public_catalog_hides_drafts_and_search_pagination_is_stable() {
         items.iter().all(|p| p["status"] == "ON_SALE"),
         "公开列表混入非在售: {list}"
     );
-    assert!(!items.iter().any(|p| p["id"].as_i64() == Some(draft)));
+    assert!(
+        !items.iter().any(|p| p["id"].as_i64() == Some(draft)),
+        "DRAFT 不应出现在公开列表: {list}"
+    );
+    assert!(
+        !items.iter().any(|p| p["id"].as_i64() == Some(off_shelf)),
+        "OFF_SHELF 不应出现在公开列表: {list}"
+    );
 
-    // DRAFT 详情 / 条款按不存在处理
-    let (_, detail) = call(
-        &app,
-        Method::GET,
-        &format!("/api/v1/products/{draft}"),
-        None,
-        None,
-    )
-    .await;
-    assert_eq!(detail["code"], 40400, "{detail}");
-    let (_, clauses) = call(
-        &app,
-        Method::GET,
-        &format!("/api/v1/products/{draft}/clauses"),
-        None,
-        None,
-    )
-    .await;
-    assert_eq!(clauses["code"], 40400, "{clauses}");
+    // 非在售详情 / 条款一律按不存在处理
+    for id in [draft, off_shelf] {
+        let (_, detail) = call(
+            &app,
+            Method::GET,
+            &format!("/api/v1/products/{id}"),
+            None,
+            None,
+        )
+        .await;
+        assert_eq!(detail["code"], 40400, "非在售详情应 404({id}): {detail}");
+        let (_, clauses) = call(
+            &app,
+            Method::GET,
+            &format!("/api/v1/products/{id}/clauses"),
+            None,
+            None,
+        )
+        .await;
+        assert_eq!(clauses["code"], 40400, "非在售条款应 404({id}): {clauses}");
+    }
 
-    // 中文唯一关键字搜索：仅本用例商品命中，total 精确为 1（不依赖历史数据）
+    // 中文唯一关键字搜索：ON_SALE 名被非在售名称包含，状态过滤后 total 精确为 1
     let query =
         serde_urlencoded::to_string([("keyword", name.as_str()), ("page", "1"), ("size", "100")])
             .expect("搜索查询串编码失败");
@@ -496,10 +529,24 @@ async fn public_catalog_hides_drafts_and_search_pagination_is_stable() {
     );
     let hits = search["data"]["hits"].as_array().expect("hits 应为数组");
     let on_sale_doc = on_sale.to_string();
+    let draft_doc = draft.to_string();
+    let off_shelf_doc = off_shelf.to_string();
     assert!(
         hits.iter()
             .any(|h| h["doc_id"].as_str() == Some(on_sale_doc.as_str())),
         "在售商品应可搜索到: {search}"
+    );
+    assert!(
+        !hits
+            .iter()
+            .any(|h| h["doc_id"].as_str() == Some(draft_doc.as_str())),
+        "DRAFT 不应出现在搜索结果: {search}"
+    );
+    assert!(
+        !hits
+            .iter()
+            .any(|h| h["doc_id"].as_str() == Some(off_shelf_doc.as_str())),
+        "OFF_SHELF 不应出现在搜索结果: {search}"
     );
 
     // 超出页：窗口函数无行，回退 COUNT 后 total 仍正确（唯一编码 → total 恒为 1）
@@ -529,7 +576,7 @@ async fn quote_without_rate_row_is_rejected() {
     let db = &state.db;
 
     let user = insert_user(db, User::ROLE_USER).await;
-    let (product, _, _) = insert_product(db, InsuranceProduct::STATUS_ON_SALE).await;
+    let (product, _, _) = insert_product(db, InsuranceProduct::STATUS_ON_SALE, None).await;
     let token = access_token(&state, user, Role::User);
 
     let (_, body) = call(
@@ -567,7 +614,7 @@ async fn callback_requires_valid_token_and_leaves_payment_untouched() {
     let db = &state.db;
 
     let user = insert_user(db, User::ROLE_USER).await;
-    let (product, _, _) = insert_product(db, InsuranceProduct::STATUS_ON_SALE).await;
+    let (product, _, _) = insert_product(db, InsuranceProduct::STATUS_ON_SALE, None).await;
     insert_rate(db, product, 12, "0.01").await;
     let token = access_token(&state, user, Role::User);
 
