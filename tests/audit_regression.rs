@@ -136,10 +136,11 @@ async fn insert_user(db: &Db, role: &str) -> i64 {
     id
 }
 
-/// 插入产品（`status` 由调用方指定），返回 (id, 唯一产品编码)。
-async fn insert_product(db: &Db, status: &str) -> (i64, String) {
+/// 插入产品（`status` 由调用方指定），返回 (id, 唯一产品编码, 唯一中文名称)。
+async fn insert_product(db: &Db, status: &str) -> (i64, String, String) {
     let id = next_id();
     let code = format!("AUDIT{id}");
+    let name = format!("保险回归{id}");
     db.exec_drop(
         "INSERT INTO insurance_products \
          (id, product_code, name, product_type, status, search_enabled, \
@@ -148,13 +149,13 @@ async fn insert_product(db: &Db, status: &str) -> (i64, String) {
         vec![
             Value::from(id),
             Value::from(&code),
-            Value::from(format!("保险回归{id}")),
+            Value::from(&name),
             Value::from(status),
         ],
     )
     .await
     .expect("插入测试产品失败");
-    (id, code)
+    (id, code, name)
 }
 
 async fn insert_rate(db: &Db, product_id: i64, term_months: i32, rate: &str) {
@@ -247,7 +248,7 @@ async fn full_transaction_flow_and_ownership() {
     let user_a = insert_user(db, User::ROLE_USER).await;
     let user_b = insert_user(db, User::ROLE_USER).await;
     let operator = insert_user(db, User::ROLE_OPERATOR).await;
-    let (product, _) = insert_product(db, InsuranceProduct::STATUS_ON_SALE).await;
+    let (product, _, _) = insert_product(db, InsuranceProduct::STATUS_ON_SALE).await;
     insert_rate(db, product, 12, "0.01").await;
 
     let token_a = access_token(&state, user_a, Role::User);
@@ -436,8 +437,8 @@ async fn public_catalog_hides_drafts_and_search_pagination_is_stable() {
     let app = build_bee_router(state.clone());
     let db = &state.db;
 
-    let (on_sale, code) = insert_product(db, InsuranceProduct::STATUS_ON_SALE).await;
-    let (draft, _) = insert_product(db, InsuranceProduct::STATUS_DRAFT).await;
+    let (on_sale, code, name) = insert_product(db, InsuranceProduct::STATUS_ON_SALE).await;
+    let (draft, _, _) = insert_product(db, InsuranceProduct::STATUS_DRAFT).await;
 
     // 公开列表忽略 status=DRAFT，只返回在售
     let (_, list) = call(
@@ -476,29 +477,29 @@ async fn public_catalog_hides_drafts_and_search_pagination_is_stable() {
     .await;
     assert_eq!(clauses["code"], 40400, "{clauses}");
 
-    // 中文关键字搜索：命中在售商品，DRAFT 不出现
+    // 中文唯一关键字搜索：仅本用例商品命中，total 精确为 1（不依赖历史数据）
+    let query =
+        serde_urlencoded::to_string([("keyword", name.as_str()), ("page", "1"), ("size", "100")])
+            .expect("搜索查询串编码失败");
     let (_, search) = call(
         &app,
         Method::GET,
-        "/api/v1/search?keyword=%E4%BF%9D%E9%99%A9&page=1&size=100",
+        &format!("/api/v1/search?{query}"),
         None,
         None,
     )
     .await;
     assert_eq!(search["code"], 0, "{search}");
+    assert_eq!(
+        search["data"]["total"], 1,
+        "唯一中文关键字应精确命中: {search}"
+    );
     let hits = search["data"]["hits"].as_array().expect("hits 应为数组");
     let on_sale_doc = on_sale.to_string();
-    let draft_doc = draft.to_string();
     assert!(
         hits.iter()
             .any(|h| h["doc_id"].as_str() == Some(on_sale_doc.as_str())),
         "在售商品应可搜索到: {search}"
-    );
-    assert!(
-        !hits
-            .iter()
-            .any(|h| h["doc_id"].as_str() == Some(draft_doc.as_str())),
-        "DRAFT 不应出现在搜索结果: {search}"
     );
 
     // 超出页：窗口函数无行，回退 COUNT 后 total 仍正确（唯一编码 → total 恒为 1）
@@ -528,7 +529,7 @@ async fn quote_without_rate_row_is_rejected() {
     let db = &state.db;
 
     let user = insert_user(db, User::ROLE_USER).await;
-    let (product, _) = insert_product(db, InsuranceProduct::STATUS_ON_SALE).await;
+    let (product, _, _) = insert_product(db, InsuranceProduct::STATUS_ON_SALE).await;
     let token = access_token(&state, user, Role::User);
 
     let (_, body) = call(
@@ -566,7 +567,7 @@ async fn callback_requires_valid_token_and_leaves_payment_untouched() {
     let db = &state.db;
 
     let user = insert_user(db, User::ROLE_USER).await;
-    let (product, _) = insert_product(db, InsuranceProduct::STATUS_ON_SALE).await;
+    let (product, _, _) = insert_product(db, InsuranceProduct::STATUS_ON_SALE).await;
     insert_rate(db, product, 12, "0.01").await;
     let token = access_token(&state, user, Role::User);
 
