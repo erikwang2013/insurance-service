@@ -14,24 +14,25 @@ use crate::error::{AppError, Result};
 use crate::models::user::User;
 use crate::models::{InsuranceProduct, InsuranceProductClause};
 
-/// 产品列表（分页/筛选）；`status` 为空串时不过滤状态
-pub async fn list(db: &Db, status: &str, page: u32, size: u32) -> Result<Vec<InsuranceProduct>> {
+/// 公开产品列表（分页）：只返回在售产品，客户端传入的 status 不参与查询。
+pub async fn list(db: &Db, page: u32, size: u32) -> Result<Vec<InsuranceProduct>> {
+    let (sql, params) = list_query(page, size);
+    db.query_all(sql, params).await
+}
+
+/// 公开列表 SQL/参数（仅在售 + 未软删）；独立成纯函数便于无库测试。
+fn list_query(page: u32, size: u32) -> (&'static str, Vec<String>) {
     let size = size.clamp(1, 100) as usize;
     let offset = ((page.max(1) as usize) - 1) * size;
-    let sql = if status.is_empty() {
+    (
         "SELECT * FROM insurance_products \
-         WHERE deleted_at IS NULL ORDER BY id DESC LIMIT ? OFFSET ?"
-    } else {
-        "SELECT * FROM insurance_products \
-         WHERE deleted_at IS NULL AND status = ? ORDER BY id DESC LIMIT ? OFFSET ?"
-    };
-    let mut params: Vec<String> = Vec::new();
-    if !status.is_empty() {
-        params.push(status.to_string());
-    }
-    params.push(size.to_string());
-    params.push(offset.to_string());
-    db.query_all(sql, params).await
+         WHERE deleted_at IS NULL AND status = ? ORDER BY id DESC LIMIT ? OFFSET ?",
+        vec![
+            InsuranceProduct::STATUS_ON_SALE.to_string(),
+            size.to_string(),
+            offset.to_string(),
+        ],
+    )
 }
 
 /// 产品详情 + 条款（条款字段随产品一起返回；独立条款接口后续按规划实现）
@@ -44,10 +45,21 @@ pub async fn detail(db: &Db, id: i64) -> Result<InsuranceProduct> {
     .ok_or(AppError::NotFound)
 }
 
-/// 产品条款列表（公开）：先确认产品存在（未软删），再查条款（未软删），
-/// 按 sort_order 升序；产品不存在或该产品无条款 → NotFound。
+/// 公开产品详情：非在售（DRAFT/OFF_SHELF/DISCONTINUED）一律按不存在处理，
+/// 运营态数据不经公开接口外泄；运营侧回读仍用 `detail`。
+pub async fn public_detail(db: &Db, id: i64) -> Result<InsuranceProduct> {
+    let product = detail(db, id).await?;
+    if product.status == InsuranceProduct::STATUS_ON_SALE {
+        Ok(product)
+    } else {
+        Err(AppError::NotFound)
+    }
+}
+
+/// 产品条款列表（公开）：先确认产品在售（未软删），再查条款（未软删），
+/// 按 sort_order 升序；产品不可见或该产品无条款 → NotFound。
 pub async fn clauses(db: &Db, product_id: i64) -> Result<Vec<InsuranceProductClause>> {
-    detail(db, product_id).await?;
+    public_detail(db, product_id).await?;
     let mut conn = db.conn().await?;
     let rows: Vec<Row> = conn
         .exec(
@@ -83,6 +95,53 @@ pub async fn featured(db: &Db, page: u32, size: u32) -> Result<Vec<InsuranceProd
 }
 
 // ---------- 运营侧（admin，任务 #7）----------
+
+/// 运营侧商品列表：可按状态筛选（空串 = 全部），未软删，按 id 倒序分页。
+pub async fn admin_list(
+    db: &Db,
+    status: &str,
+    page: u32,
+    size: u32,
+) -> Result<Vec<InsuranceProduct>> {
+    if !admin_status_allowed(status) {
+        return Err(AppError::business(
+            "status 仅支持 DRAFT / ON_SALE / OFF_SHELF / DISCONTINUED",
+        ));
+    }
+    let (sql, params) = admin_list_query(status, page, size);
+    db.query_all(sql, params).await
+}
+
+/// 运营列表状态白名单（空串表示不过滤）。
+fn admin_status_allowed(status: &str) -> bool {
+    status.is_empty()
+        || [
+            InsuranceProduct::STATUS_DRAFT,
+            InsuranceProduct::STATUS_ON_SALE,
+            InsuranceProduct::STATUS_OFF_SHELF,
+            InsuranceProduct::STATUS_DISCONTINUED,
+        ]
+        .contains(&status)
+}
+
+/// 运营列表 SQL/参数；独立成纯函数便于无库测试。
+fn admin_list_query(status: &str, page: u32, size: u32) -> (&'static str, Vec<String>) {
+    let size = size.clamp(1, 100) as usize;
+    let offset = ((page.max(1) as usize) - 1) * size;
+    if status.is_empty() {
+        (
+            "SELECT * FROM insurance_products \
+             WHERE deleted_at IS NULL ORDER BY id DESC LIMIT ? OFFSET ?",
+            vec![size.to_string(), offset.to_string()],
+        )
+    } else {
+        (
+            "SELECT * FROM insurance_products \
+             WHERE deleted_at IS NULL AND status = ? ORDER BY id DESC LIMIT ? OFFSET ?",
+            vec![status.to_string(), size.to_string(), offset.to_string()],
+        )
+    }
+}
 
 /// 商品建档/更新请求体（同 product_code → UPDATE，否则 INSERT；status 缺省 DRAFT）
 #[derive(Debug, Deserialize)]
@@ -327,5 +386,40 @@ fn row_to_clause(row: &Row) -> InsuranceProductClause {
         created_at: dt_row(row, "created_at"),
         updated_at: dt_row(row, "updated_at"),
         deleted_at: dt_opt_row(row, "deleted_at"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{admin_list_query, admin_status_allowed, list_query, InsuranceProduct};
+
+    /// 公开列表始终按 ON_SALE 过滤，分页参数位于状态之后
+    #[test]
+    fn public_list_always_filters_on_sale() {
+        let (sql, params) = list_query(2, 10);
+        assert!(sql.contains("status = ?"), "{sql}");
+        assert_eq!(params, vec!["ON_SALE", "10", "10"]);
+    }
+
+    /// 运营列表：指定状态时加过滤；空状态返回全部
+    #[test]
+    fn admin_list_filters_requested_status() {
+        let (sql, params) = admin_list_query(InsuranceProduct::STATUS_DRAFT, 1, 20);
+        assert!(sql.contains("status = ?"), "{sql}");
+        assert_eq!(params, vec!["DRAFT", "20", "0"]);
+
+        let (sql_all, params_all) = admin_list_query("", 1, 20);
+        assert!(!sql_all.contains("status = ?"), "{sql_all}");
+        assert_eq!(params_all, vec!["20", "0"]);
+    }
+
+    /// 运营列表状态白名单：四个合法状态 + 空串，其余拒绝
+    #[test]
+    fn admin_list_status_whitelist() {
+        for status in ["", "DRAFT", "ON_SALE", "OFF_SHELF", "DISCONTINUED"] {
+            assert!(admin_status_allowed(status), "{status} 应合法");
+        }
+        assert!(!admin_status_allowed("BOGUS"));
+        assert!(!admin_status_allowed("ON_SALE' OR '1'='1"));
     }
 }

@@ -122,7 +122,8 @@ pub fn build_bee_router(state: AppState) -> axum::Router {
                 .post("/claims/{id}/review", claim_handler)
                 .post("/claims/{id}/documents", claim_handler)
                 .get("/claims/{id}/documents", claim_handler)
-                // admin（运营后台：商品建档 / 上下架）
+                // admin（运营后台：商品列表 / 建档 / 上下架）
+                .get("/admin/products", admin_handler)
                 .post("/admin/products", admin_handler)
                 .post("/admin/products/{id}/status", admin_handler)
                 // admin/audit-logs（审计查询，OPERATOR/ADMIN）

@@ -1670,6 +1670,7 @@ dependencies = [
  "security-rust",
  "serde",
  "serde_json",
+ "serde_urlencoded",
  "thiserror 2.0.20",
  "tokio",
  "tower",

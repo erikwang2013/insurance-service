@@ -8,7 +8,6 @@ use bee_rust::bee_router::context::RouterError;
 use bee_rust::bee_router::{Context, Controller};
 
 use crate::db::Db;
-use crate::models::InsuranceProduct;
 use crate::services::product_service;
 
 use super::{error_response, json_envelope, ok_response, query_map};
@@ -25,15 +24,10 @@ impl ProductController {
 
     async fn list(&self, ctx: &mut Context) -> Result<(), RouterError> {
         let q = query_map(ctx.request.uri().query());
-        // 公开列表缺省仅暴露在售：OFF_SHELF/DRAFT 属运营侧（admin 显式传 status 过滤）
-        let status = q
-            .get("status")
-            .filter(|s| !s.is_empty())
-            .map(String::as_str)
-            .unwrap_or(InsuranceProduct::STATUS_ON_SALE);
+        // 公开列表只暴露在售；客户端 status 一律忽略（运营态走 /admin/products）
         let page = q.get("page").and_then(|s| s.parse().ok()).unwrap_or(1);
         let size = q.get("size").and_then(|s| s.parse().ok()).unwrap_or(20);
-        match product_service::list(&self.db, status, page, size).await {
+        match product_service::list(&self.db, page, size).await {
             Ok(list) => {
                 let data = serde_json::to_value(&list)
                     .map_err(|e| RouterError::SerializeError(e.to_string()))?;
@@ -50,7 +44,7 @@ impl ProductController {
                 return self.reply(ctx, json_envelope(40000, "产品 id 参数无效")).await;
             }
         };
-        match product_service::detail(&self.db, id).await {
+        match product_service::public_detail(&self.db, id).await {
             Ok(p) => {
                 let data = serde_json::to_value(&p)
                     .map_err(|e| RouterError::SerializeError(e.to_string()))?;

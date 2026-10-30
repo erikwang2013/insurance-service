@@ -23,7 +23,7 @@ use crate::error::{AppError, Result as AppResult};
 use crate::models::audit_log::AuditLog;
 use crate::models::user::User;
 use crate::services::product_service::{
-    admin_change_status, admin_upsert, AdminStatusReq, AdminUpsertReq,
+    admin_change_status, admin_list, admin_upsert, AdminStatusReq, AdminUpsertReq,
 };
 
 use super::{
@@ -92,6 +92,31 @@ impl AdminController {
         }
     }
 
+    /// GET /api/v1/admin/products：运营侧商品列表（须 OPERATOR/ADMIN）
+    ///
+    /// `status` 可选（DRAFT/ON_SALE/OFF_SHELF/DISCONTINUED，空 = 全部），
+    /// `page` 从 1 起、`size` 1..=100（缺省 1/20），按 id 倒序。
+    async fn list(&self, ctx: &mut Context) -> Result<(), RouterError> {
+        if let Err(resp) = require_operator(ctx) {
+            return self.reply(ctx, resp).await;
+        }
+        let q = query_map(ctx.request.uri().query());
+        let status = q.get("status").map(String::as_str).unwrap_or_default();
+        let page = q.get("page").and_then(|s| s.parse().ok()).unwrap_or(1u32).max(1);
+        let size = q.get("size").and_then(|s| s.parse().ok()).unwrap_or(20u32).clamp(1, 100);
+        match admin_list(&self.db, status, page, size).await {
+            Ok(list) => {
+                let data = serde_json::json!({
+                    "list": list,
+                    "page": page,
+                    "size": size,
+                });
+                self.reply(ctx, ok_response(data)).await
+            }
+            Err(e) => self.reply(ctx, error_response(&e)).await,
+        }
+    }
+
     /// GET /api/v1/admin/audit-logs：运营端审计日志查询（须 OPERATOR/ADMIN）
     ///
     /// 操作人取自已认证 token（角色校验用，不再接受 query 参数）；
@@ -142,9 +167,7 @@ impl AdminController {
             }
         }
         if let Some(v) = q.get("created_from") {
-            // 客户端常以 %20 编码空格（query_map 阶段 0 不解码），先还原再解析
-            let v = v.replace("%20", " ");
-            let Some(dt) = parse_dt_start(&v) else {
+            let Some(dt) = parse_dt_start(v) else {
                 return self
                     .reply(ctx, json_envelope(
                         40000,
@@ -156,9 +179,7 @@ impl AdminController {
             args.push(Value::from(dt.format("%Y-%m-%d %H:%M:%S").to_string()));
         }
         if let Some(v) = q.get("created_to") {
-            // 客户端常以 %20 编码空格（query_map 阶段 0 不解码），先还原再解析
-            let v = v.replace("%20", " ");
-            let Some(dt) = parse_dt_end(&v) else {
+            let Some(dt) = parse_dt_end(v) else {
                 return self
                     .reply(ctx, json_envelope(
                         40000,
@@ -203,6 +224,8 @@ impl Controller for AdminController {
         let method = ctx.request.method().clone();
         if method == axum::http::Method::POST && path.ends_with("/status") {
             self.change_status(ctx).await
+        } else if method == axum::http::Method::GET && path.ends_with("/admin/products") {
+            self.list(ctx).await
         } else if method == axum::http::Method::POST && path.ends_with("/admin/products") {
             self.upsert(ctx).await
         } else if method == axum::http::Method::GET && path.ends_with("/admin/audit-logs") {

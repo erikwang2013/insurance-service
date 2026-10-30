@@ -170,17 +170,12 @@ fn internal_error_response(e: RouterError) -> Response {
     axum::Json(envelope).into_response()
 }
 
-/// 解析 query 字符串为键值表（阶段 0：不做百分号解码，关键字接口后续完善）
+/// 解析 query 字符串为键值表（百分号解码与 `+` → 空格由 serde_urlencoded 完成；
+/// 格式非法时回退空表，各控制器再按字段校验）
 pub(crate) fn query_map(query: Option<&str>) -> HashMap<String, String> {
-    let mut map = HashMap::new();
-    if let Some(q) = query {
-        for pair in q.split('&') {
-            if let Some((k, v)) = pair.split_once('=') {
-                map.insert(k.to_string(), v.to_string());
-            }
-        }
-    }
-    map
+    query
+        .and_then(|q| serde_urlencoded::from_str::<HashMap<String, String>>(q).ok())
+        .unwrap_or_default()
 }
 
 /// 读取请求体 JSON；失败时返回信封响应（40000 校验错误）
@@ -329,4 +324,20 @@ pub async fn healthz_handler() -> Response {
         "status": "ok",
         "service": "insurance-service"
     }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::query_map;
+
+    /// 百分号编码（中文关键字）与 `+` 均正确解码；缺省/非法输入回退空表
+    #[test]
+    fn query_map_decodes_percent_encoding_and_plus() {
+        let map = query_map(Some("keyword=%E4%BF%9D%E9%99%A9&name=a+b&page=2"));
+        assert_eq!(map.get("keyword").map(String::as_str), Some("保险"));
+        assert_eq!(map.get("name").map(String::as_str), Some("a b"));
+        assert_eq!(map.get("page").map(String::as_str), Some("2"));
+        assert!(query_map(None).is_empty());
+        assert_eq!(query_map(Some("flag")).get("flag").map(String::as_str), Some(""));
+    }
 }
