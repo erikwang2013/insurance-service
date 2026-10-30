@@ -202,7 +202,7 @@ DATABASE_URL=... JWT_SECRET=... CRYPTO_MASTER_KEY=... ./target/release/insurance
 
 - 依赖：MySQL 8.4；`bee-rust` 1.0.6 随仓库 vendored（`vendor/bee-rust`，快照 `93dd5c57`），无需 GitHub git。
 - 健康检查：`GET /healthz`。
-- 测试：`cargo test` 共 50 项（44 单元 + 6 集成）。DB 用例由 `TEST_DATABASE_URL` 门控，
+- 测试：`cargo test` 共 57 项（51 单元 + 6 集成）。DB 用例由 `TEST_DATABASE_URL` 门控，
   未设置时直接返回；带库运行需先执行 `install.sql`：
   `TEST_DATABASE_URL=mysql://... cargo test`。
 - `cargo check --all-targets` 除外部 `proc-macro-error2` 的 future-incompat 提示外干净；

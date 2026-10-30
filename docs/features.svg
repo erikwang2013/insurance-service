@@ -85,7 +85,7 @@
     <text x="50" y="472" font-size="11.5" fill="#2b3a4a">安全：Trace → 限流（对端 IP）→ JWT/RBAC；参数化查询；AES-GCM；argon2；令牌精确过期</text>
     <text x="50" y="490" font-size="11.5" fill="#2b3a4a">可观测：每请求 trace_id + X-Trace-Id；DB/内部错误统一 50000（细节只进日志）</text>
     <text x="50" y="508" font-size="11.5" fill="#2b3a4a">服务仅提供 JSON 接口；未匹配路径返回统一 404 信封</text>
-    <text x="50" y="526" font-size="11.5" fill="#2b3a4a">质量：50 个测试（44 单元 + 6 集成；4 个 DB 用例需 TEST_DATABASE_URL）；主键 snowflake</text>
+    <text x="50" y="526" font-size="11.5" fill="#2b3a4a">质量：57 个测试（51 单元 + 6 集成；4 个 DB 用例需 TEST_DATABASE_URL）；主键 snowflake</text>
   </g>
 
   <text x="972" y="552" text-anchor="end" font-size="22" font-weight="600" fill="#8ea0b5" fill-opacity="0.45" transform="rotate(-12 900 548)">https://erik.xyz</text>

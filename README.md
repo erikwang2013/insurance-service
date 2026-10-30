@@ -177,13 +177,13 @@ cargo test           # 单元 + 集成；DB 用例未设置 TEST_DATABASE_URL �
 TEST_DATABASE_URL='mysql://user:pass@127.0.0.1:3306/insurance_service' cargo test
 ```
 
-- 当前测试规模：50 个测试 = 44 个单元测试（lib）+ 6 个集成测试（`tests/auth_tokens.rs` 1 项、
+- 当前测试规模：57 个测试 = 51 个单元测试（lib）+ 6 个集成测试（`tests/auth_tokens.rs` 1 项、
   `tests/trade_flow.rs` + `tests/public_surface.rs` 共 5 项，公共夹具在 `tests/common/mod.rs`）。
   其中 4 个 DB 用例由 `TEST_DATABASE_URL` 门控（未设置时直接返回）；覆盖交易闭环（报价 → 订单 →
   双支付回调 → 保单幂等 → 签约 → 理赔 → 退保）、跨用户归属隔离、公开目录与搜索可见性、
   回调令牌鉴权、404/429 的 trace_id 一致性。
   单元测试覆盖限流窗口、加解密与脱敏、身份证 / 手机号校验、snowflake 唯一性、搜索转义、
-  报价试算、支付回调令牌比较、JWT 类型隔离、健康检查与统一 404 信封等，均不依赖 MySQL。
+  报价试算、保障期日期推导、支付回调令牌比较、JWT 类型隔离与占位符拒绝、健康检查与统一 404 信封等，均不依赖 MySQL。
 - 按项目约定（CLAUDE.md）：代码变更后**先跑测试、再提交**。
 
 ### 已实现 API 概览（v1.11.0）
@@ -282,7 +282,7 @@ TEST_DATABASE_URL='mysql://user:pass@127.0.0.1:3306/insurance_service' cargo tes
 | 代码规模 | 55 个 Rust 源文件 / 7,747 行 | 74 个 / 8,616 行 |
 | 路由 | 41 条业务 + `/healthz` = 42 | 42 条业务（含 `/admin/stats`）+ `/healthz` + 3 条浏览器路由 |
 | 控制器 / 模型 / 服务 | 11 / 13 / 10 | 12 / 18 / 11 |
-| 测试 | 50 个测试（44 单元 + 6 集成；4 个 DB 用例由 `TEST_DATABASE_URL` 门控） | 商业版当前快照未包含测试（以交付版本为准）；无 CI 配置 |
+| 测试 | 57 个测试（51 单元 + 6 集成；4 个 DB 用例由 `TEST_DATABASE_URL` 门控） | 商业版当前快照未包含测试（以交付版本为准）；无 CI 配置 |
 
 ### 多维度对比 / Multi-dimensional Comparison
 
@@ -292,7 +292,7 @@ TEST_DATABASE_URL='mysql://user:pass@127.0.0.1:3306/insurance_service' cargo tes
 | 安全防护 | JWT access/refresh + RBAC（Bearer 鉴权）；固定窗口限流 300 次/60s/IP（进程内、按对端 IP）；trace_id；AES-256-GCM + argon2；validator；审计日志；内部错误不外泄 | 安全中间件、限流、加密、校验源码与开源版一致；新增公开 HTML/宠物/favicon 面与运营统计接口（OPERATOR/ADMIN），暴露面略大 |
 | 性能与规模 | axum + tokio；mysql_async 连接池；进程内 MemoryCache；进程内固定窗口限流；无后台任务 | 运行时基本相同；配置新增 Redis/OpenSearch，但 AppState 仍用 MemoryCache，SyncWorker 仅定义未启动；多实例共享缓存/限流未落地 |
 | 数据与检索 | 14 表；搜索为 MySQL LIKE；无全文索引/同步 | 19 表（+产品分类/关系、被保人、合同签署方、搜索同步日志）；OpenSearch 同步 Worker 与 rust_scout 依赖为预留，SearchService 仍走 MySQL LIKE |
-| 测试与质量 | 50 个测试（44 单元 + 6 集成；4 个 DB 用例由 `TEST_DATABASE_URL` 门控）；无 CI 配置 | 商业版当前快照未包含测试（以交付版本为准）；无 CI 配置 |
+| 测试与质量 | 57 个测试（51 单元 + 6 集成；4 个 DB 用例由 `TEST_DATABASE_URL` 门控）；无 CI 配置 | 商业版当前快照未包含测试（以交付版本为准）；无 CI 配置 |
 | 部署与运维 | 无 Dockerfile/compose/CI；`config/app.toml` + `bee.toml`、`install.sql`、`/healthz`、`scripts/release.sh`；单进程 | 同左；新增 Redis/OpenSearch 可选环境变量；仍无 compose、迁移 runner、CI |
 | 多端与国际化 | 纯 JSON API；无 HTML 面、无客户端源码、无 i18n | 增加 HTML 落地页、宠物表情、favicon、HTML 错误页与 `site/` 静态站；无 Flutter/小程序源码；无 i18n |
 | 扩展性与二次开发 | 仅微信 code2session provider；支付/电子签为内联 Mock；路由/控制器结构简单 | `PayProvider` / `ElectronicSignature` trait + 微信/易签/Mock 适配器；统计 service；搜索同步 Worker 预留；路由/控制器结构同源；无 OpenAPI 文件 |

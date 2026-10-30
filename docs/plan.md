@@ -19,7 +19,7 @@ Rust（`bee_rust` + `axum`）实现的保险服务平台后端，覆盖
 - 所有 `/api/v1/*`（除公开路由）由 axum 中间件链强制 JWT 认证；运营端点要求 OPERATOR / ADMIN；
   身份一律取自令牌，客户端 `user_id` 不作为身份依据。
 - `src/routes.rs` 的 `build_bee_router()` 挂载 41 个业务端点 + `/healthz`；未匹配路径统一返回 JSON 信封。
-- `cargo test` 共 50 项（44 单元 + 6 集成；4 个 DB 用例由 `TEST_DATABASE_URL` 门控）。
+- `cargo test` 共 57 项（51 单元 + 6 集成；4 个 DB 用例由 `TEST_DATABASE_URL` 门控）。
 - 存储只依赖 MySQL 8.4；限流与会话使用进程内缓存。
 
 ## 待办
@@ -66,5 +66,5 @@ Rust（`bee_rust` + `axum`）实现的保险服务平台后端，覆盖
 | 里程碑 | 判定标准 |
 |--------|----------|
 | 阶段 0 完成 ✅ | `/healthz` 与 auth / product / search 路由可运行；`cargo test` 通过 |
-| 阶段 1 完成 🔄 | 报价 → 订单 → 支付（Mock 回调令牌）→ 保单签发 → 签约闭环走通；归属 / 可见性 / 回调回归覆盖；50 项测试通过；待补保单 PDF 与续保 |
+| 阶段 1 完成 🔄 | 报价 → 订单 → 支付（Mock 回调令牌）→ 保单签发 → 签约闭环走通；归属 / 可见性 / 回调回归覆盖；57 项测试通过；待补保单 PDF 与续保 |
 | 阶段 2 完成 | Flutter 端完整业务链路联调通过（未开始） |
