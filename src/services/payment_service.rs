@@ -212,6 +212,11 @@ impl PaymentService {
                         )
                         .await
                         .map_err(db_error)?;
+                        // 支付 SUCCESS 与订单 PAID 必须同事务生效：订单已被其他支付单置为 PAID 时
+                        // 整笔回滚（支付单留在 CREATED 供对账），不能出现无订单效果的 SUCCESS。
+                        if tx.affected_rows() != 1 {
+                            return Err(AppError::state_conflict("订单状态已变化，支付回调未入账"));
+                        }
                     } else {
                         // 失败回调不写 paid_at，也不触碰订单
                         tx.exec_drop(
