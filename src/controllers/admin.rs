@@ -13,7 +13,7 @@ use mysql_async::{Row, Value};
 use bee_rust::bee_router::context::RouterError;
 use bee_rust::bee_router::{Context, Controller};
 
-use crate::db::{db_error, json_opt_row, Db};
+use crate::db::{db_error, dt_row, json_opt_row, Db};
 use crate::error::{AppError, Result as AppResult};
 use crate::models::audit_log::AuditLog;
 use crate::models::user::User;
@@ -273,10 +273,7 @@ fn row_to_audit(row: &Row) -> AuditLog {
         ip: row.get::<Option<String>, _>("ip").flatten(),
         user_agent: row.get::<Option<String>, _>("user_agent").flatten(),
         trace_id: row.get::<Option<String>, _>("trace_id").flatten(),
-        created_at: row
-            .get::<NaiveDateTime, _>("created_at")
-            .unwrap_or_default()
-            .and_utc(),
+        created_at: dt_row(row, "created_at"),
     }
 }
 

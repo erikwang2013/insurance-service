@@ -1,4 +1,4 @@
-//! 参数校验：身份证 / 手机号 / 金额（backend-architecture.md §2 utils/validator.rs）
+//! 参数校验：身份证 / 手机号（backend-architecture.md §2 utils/validator.rs）
 
 use crate::error::{AppError, Result};
 

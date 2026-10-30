@@ -1,8 +1,8 @@
 //! 应用配置（对齐 backend-architecture.md §12.1）
 //!
-//! 说明：规划文档使用 `bee_config #[derive(Config)]`，但 bee-rust（含 bee_config）当前
-//! 无法在编译环境拉取。阶段 0 采用「手写 env 读取」实现等价配置结构，字段名与
-//! `.env.example` / `config/app.toml` 严格对齐，后续可平滑替换为 bee_config derive。
+//! 说明：规划文档使用 `bee_config #[derive(Config)]`；当前仍采用「手写 env 读取」
+//! 实现等价配置结构（bee_config 快照已随 vendor 提供，后续可切换），字段名与
+//! `.env.example` / `config/app.toml` 严格对齐。
 
 use serde::Deserialize;
 
@@ -143,8 +143,8 @@ fn env_or(key: &str, default: &str) -> String {
     std::env::var(key).unwrap_or_else(|_| default.to_string())
 }
 
-/// 日志用 DSN：把 `://` 与 `@` 之间的 `user:password` 替换为 `***`；
-/// 无 `://` 的 `user:pass@host` 形式同样脱敏。
+/// 日志用 DSN：把 `://` 与最后一个 `@` 之间的凭据段（`user` 或 `user:password`）
+/// 整体替换为 `***`；无 `://` 的 `user:pass@host` 形式同样脱敏。
 ///
 /// 无凭据段或非标准 DSN 原样返回（不猜测、不丢信息）。
 pub fn redact_db_url(url: &str) -> String {

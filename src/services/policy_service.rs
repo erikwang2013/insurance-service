@@ -13,7 +13,8 @@ use serde::Deserialize;
 use uuid::Uuid;
 
 use crate::db::{
-    db_error, dec_opt_row, dt_opt_row, dt_row, json_opt_row, json_val, value_opt_int, Db,
+    db_error, dec_opt_row, dt_opt_row, dt_row, json_opt_row, json_val, value_opt_dec,
+    value_opt_int, value_opt_str, Db,
 };
 use crate::error::{AppError, Result};
 use crate::models::policy::{validate_beneficiaries, Beneficiary, EndorseBeneficiariesReq, Policy};
@@ -325,8 +326,8 @@ impl PolicyService {
                         vec![
                             id.into(),
                             Value::from(policy_id), Value::from(b.name.trim()),
-                            b.relationship.clone().map(Value::from).unwrap_or(Value::NULL), Value::from(b.beneficiary_type()),
-                            b.share_percent.map(|d| Value::from(d.to_string())).unwrap_or(Value::NULL), Value::from(i as i32),
+                            value_opt_str(b.relationship.clone()), Value::from(b.beneficiary_type()),
+                            value_opt_dec(b.share_percent), Value::from(i as i32),
                         ],
                     ).await.map_err(db_error)?;
                 }

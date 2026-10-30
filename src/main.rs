@@ -3,7 +3,7 @@
 //! 流程：`bee_rust::init()`（含日志初始化）→ 加载配置 → 装配 bee Router → axum serve。
 //!
 //! 说明：bee-rust 已通过本地 path 依赖激活（见 Cargo.toml [workspace.dependencies]
-//! 注释），此处直接启动真实 HTTP 服务；业务过滤器链与控制器随阶段 1 接入。
+//! 注释），此处直接启动真实 HTTP 服务；业务过滤器链与控制器已接入。
 
 use std::net::SocketAddr;
 
@@ -39,7 +39,7 @@ async fn main() {
         "配置加载完成"
     );
 
-    // 3. 装配控制器状态（阶段 1：模板引擎 / 会话缓存 / 业务 Controller）
+    // 3. 装配控制器状态（模板引擎 / 会话缓存 / 业务 Controller）
     let state = match AppState::new(&cfg) {
         Ok(s) => s,
         Err(e) => {

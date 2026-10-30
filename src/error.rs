@@ -1,4 +1,4 @@
-//! 统一错误枚举 + thiserror（对齐 backend-architecture.md §6.2）
+//! 统一错误枚举（手写 Display / Error 实现，对齐 backend-architecture.md §6.2）
 
 use std::fmt;
 
