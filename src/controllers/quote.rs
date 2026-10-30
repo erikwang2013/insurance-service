@@ -2,14 +2,13 @@
 
 use async_trait::async_trait;
 use axum::http::StatusCode;
-use axum::response::Response;
 
 use bee_rust::bee_router::context::RouterError;
 use bee_rust::bee_router::{Context, Controller};
 
 use crate::services::quote_service::{QuoteService, CreateQuoteReq};
 
-use super::{current_user_id, error_response, json_envelope, ok_response, read_json};
+use super::{current_user_id, error_response, json_envelope, ok_response, read_json, reply};
 
 /// 报价控制器（持有 QuoteService，按请求路径分派动作）
 pub struct QuoteController {
@@ -24,50 +23,41 @@ impl QuoteController {
     async fn create(&self, ctx: &mut Context) -> Result<(), RouterError> {
         let user_id = match current_user_id(ctx) {
             Ok(id) => id,
-            Err(resp) => return self.reply(ctx, resp).await,
+            Err(resp) => return reply(ctx, resp).await,
         };
         let req: CreateQuoteReq = match read_json(ctx).await {
             Ok(r) => r,
-            Err(resp) => return self.reply(ctx, resp).await,
+            Err(resp) => return reply(ctx, resp).await,
         };
         match self.service.create(user_id, req).await {
             Ok(q) => {
                 let data = serde_json::to_value(&q)
                     .map_err(|e| RouterError::SerializeError(e.to_string()))?;
-                self.reply(ctx, ok_response(data)).await
+                reply(ctx, ok_response(data)).await
             }
-            Err(e) => self.reply(ctx, error_response(&e)).await,
+            Err(e) => reply(ctx, error_response(&e)).await,
         }
     }
 
     async fn detail(&self, ctx: &mut Context) -> Result<(), RouterError> {
         let id = match ctx.param("id").and_then(|s| s.parse::<i64>().ok()) {
             Some(id) => id,
-            None => return self.reply(ctx, json_envelope(40000, "报价 id 参数无效")).await,
+            None => return reply(ctx, json_envelope(40000, "报价 id 参数无效")).await,
         };
         let user_id = match current_user_id(ctx) {
             Ok(id) => id,
-            Err(resp) => return self.reply(ctx, resp).await,
+            Err(resp) => return reply(ctx, resp).await,
         };
         match self.service.by_id(id, user_id).await {
             Ok(q) => {
                 let data = serde_json::to_value(&q)
                     .map_err(|e| RouterError::SerializeError(e.to_string()))?;
-                self.reply(ctx, ok_response(data)).await
+                reply(ctx, ok_response(data)).await
             }
-            Err(e) => self.reply(ctx, error_response(&e)).await,
+            Err(e) => reply(ctx, error_response(&e)).await,
         }
     }
 
-    async fn reply(&self, ctx: &mut Context, resp: Response) -> Result<(), RouterError> {
-        let bytes = axum::body::to_bytes(resp.into_body(), 2 * 1024 * 1024)
-            .await
-            .map_err(|e| RouterError::Internal(e.to_string()))?;
-        let value: serde_json::Value = serde_json::from_slice(&bytes)
-            .map_err(|e| RouterError::SerializeError(e.to_string()))?;
-        ctx.json(&value)?;
-        Ok(())
-    }
 }
 
 #[async_trait]

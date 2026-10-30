@@ -3,13 +3,12 @@
 //! 基于 db 层执行参数化查询；SQL 仅由受信常量拼接，值一律经参数绑定（任务 #3）。
 //! 运营侧建档/上下架（任务 #7）也落于此文件：与公开 list/detail 共用 Db 与模型。
 
-use chrono::{DateTime, NaiveDateTime, Utc};
 use mysql_async::prelude::Queryable;
 use mysql_async::{Row, Value};
 use rust_decimal::Decimal;
 use serde::Deserialize;
 
-use crate::db::{db_error, Db};
+use crate::db::{db_error, dt_opt_row, dt_row, value_opt_str, Db};
 use crate::error::{AppError, Result};
 use crate::models::user::User;
 use crate::models::{InsuranceProduct, InsuranceProductClause};
@@ -351,25 +350,7 @@ pub async fn admin_change_status(
     detail(db, product_id).await
 }
 
-fn value_opt_str(v: Option<String>) -> Value {
-    v.map(Value::from).unwrap_or(Value::NULL)
-}
-
 // ---------- helpers: Row → InsuranceProductClause（与 quote_service 同模式） ----------
-
-/// 读行 → DateTime<Utc>（DATETIME(3) 二进制协议以 NaiveDateTime 到达）
-fn dt_row(row: &Row, col: &str) -> DateTime<Utc> {
-    row.get::<NaiveDateTime, &str>(col)
-        .unwrap_or_default()
-        .and_utc()
-}
-
-/// 读行 → Option<DateTime<Utc>>
-fn dt_opt_row(row: &Row, col: &str) -> Option<DateTime<Utc>> {
-    row.get::<Option<NaiveDateTime>, &str>(col)
-        .flatten()
-        .map(|d| d.and_utc())
-}
 
 /// 从 Row 重建条款（TINYINT(1) → bool 同 db.rs InsuranceProduct 写法）
 fn row_to_clause(row: &Row) -> InsuranceProductClause {

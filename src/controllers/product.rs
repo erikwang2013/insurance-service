@@ -2,7 +2,6 @@
 
 use async_trait::async_trait;
 use axum::http::StatusCode;
-use axum::response::Response;
 
 use bee_rust::bee_router::context::RouterError;
 use bee_rust::bee_router::{Context, Controller};
@@ -10,7 +9,7 @@ use bee_rust::bee_router::{Context, Controller};
 use crate::db::Db;
 use crate::services::product_service;
 
-use super::{error_response, json_envelope, ok_response, query_map};
+use super::{error_response, json_envelope, ok_response, query_map, reply};
 
 /// 产品控制器（持有 Db，任务 #3 接入真实查询）
 pub struct ProductController {
@@ -31,9 +30,9 @@ impl ProductController {
             Ok(list) => {
                 let data = serde_json::to_value(&list)
                     .map_err(|e| RouterError::SerializeError(e.to_string()))?;
-                self.reply(ctx, ok_response(data)).await
+                reply(ctx, ok_response(data)).await
             }
-            Err(e) => self.reply(ctx, error_response(&e)).await,
+            Err(e) => reply(ctx, error_response(&e)).await,
         }
     }
 
@@ -41,16 +40,16 @@ impl ProductController {
         let id = match ctx.param("id").and_then(|s| s.parse::<i64>().ok()) {
             Some(id) => id,
             None => {
-                return self.reply(ctx, json_envelope(40000, "产品 id 参数无效")).await;
+                return reply(ctx, json_envelope(40000, "产品 id 参数无效")).await;
             }
         };
         match product_service::public_detail(&self.db, id).await {
             Ok(p) => {
                 let data = serde_json::to_value(&p)
                     .map_err(|e| RouterError::SerializeError(e.to_string()))?;
-                self.reply(ctx, ok_response(data)).await
+                reply(ctx, ok_response(data)).await
             }
-            Err(e) => self.reply(ctx, error_response(&e)).await,
+            Err(e) => reply(ctx, error_response(&e)).await,
         }
     }
 
@@ -58,16 +57,16 @@ impl ProductController {
         let id = match ctx.param("id").and_then(|s| s.parse::<i64>().ok()) {
             Some(id) => id,
             None => {
-                return self.reply(ctx, json_envelope(40000, "产品 id 参数无效")).await;
+                return reply(ctx, json_envelope(40000, "产品 id 参数无效")).await;
             }
         };
         match product_service::clauses(&self.db, id).await {
             Ok(items) => {
                 let data = serde_json::to_value(&items)
                     .map_err(|e| RouterError::SerializeError(e.to_string()))?;
-                self.reply(ctx, ok_response(data)).await
+                reply(ctx, ok_response(data)).await
             }
-            Err(e) => self.reply(ctx, error_response(&e)).await,
+            Err(e) => reply(ctx, error_response(&e)).await,
         }
     }
 
@@ -79,22 +78,12 @@ impl ProductController {
             Ok(list) => {
                 let data = serde_json::to_value(&list)
                     .map_err(|e| RouterError::SerializeError(e.to_string()))?;
-                self.reply(ctx, ok_response(data)).await
+                reply(ctx, ok_response(data)).await
             }
-            Err(e) => self.reply(ctx, error_response(&e)).await,
+            Err(e) => reply(ctx, error_response(&e)).await,
         }
     }
 
-    /// 将已构造好的响应写入 Context
-    async fn reply(&self, ctx: &mut Context, resp: Response) -> Result<(), RouterError> {
-        let bytes = axum::body::to_bytes(resp.into_body(), 2 * 1024 * 1024)
-            .await
-            .map_err(|e| RouterError::Internal(e.to_string()))?;
-        let value: serde_json::Value = serde_json::from_slice(&bytes)
-            .map_err(|e| RouterError::SerializeError(e.to_string()))?;
-        ctx.json(&value)?;
-        Ok(())
-    }
 }
 
 #[async_trait]

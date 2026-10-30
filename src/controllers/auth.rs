@@ -2,7 +2,6 @@
 
 use async_trait::async_trait;
 use axum::http::StatusCode;
-use axum::response::Response;
 
 use bee_rust::bee_router::context::RouterError;
 use bee_rust::bee_router::{Context, Controller};
@@ -12,7 +11,7 @@ use crate::services::auth_service::{
     WechatLoginReq,
 };
 
-use super::{current_user_id, error_response, ok_response, read_json};
+use super::{current_user_id, error_response, ok_response, read_json, reply};
 
 /// 认证控制器（持有 AuthService，按请求路径分派动作）
 pub struct AuthController {
@@ -27,74 +26,73 @@ impl AuthController {
     async fn register(&self, ctx: &mut Context) -> Result<(), RouterError> {
         let req: RegisterReq = match read_json(ctx).await {
             Ok(r) => r,
-            Err(resp) => return self.reply(ctx, resp).await,
+            Err(resp) => return reply(ctx, resp).await,
         };
         match self.service.register(req).await {
             Ok(r) => {
                 let data = serde_json::to_value(&r)
                     .map_err(|e| RouterError::SerializeError(e.to_string()))?;
-                self.reply(ctx, ok_response(data)).await
+                reply(ctx, ok_response(data)).await
             }
-            Err(e) => self.reply(ctx, error_response(&e)).await,
+            Err(e) => reply(ctx, error_response(&e)).await,
         }
     }
 
     async fn login(&self, ctx: &mut Context) -> Result<(), RouterError> {
         let req: LoginReq = match read_json(ctx).await {
             Ok(r) => r,
-            Err(resp) => return self.reply(ctx, resp).await,
+            Err(resp) => return reply(ctx, resp).await,
         };
         match self.service.login(req).await {
             Ok(r) => {
                 let data = serde_json::to_value(&r)
                     .map_err(|e| RouterError::SerializeError(e.to_string()))?;
-                self.reply(ctx, ok_response(data)).await
+                reply(ctx, ok_response(data)).await
             }
-            Err(e) => self.reply(ctx, error_response(&e)).await,
+            Err(e) => reply(ctx, error_response(&e)).await,
         }
     }
 
     async fn wechat_login(&self, ctx: &mut Context) -> Result<(), RouterError> {
         let req: WechatLoginReq = match read_json(ctx).await {
             Ok(r) => r,
-            Err(resp) => return self.reply(ctx, resp).await,
+            Err(resp) => return reply(ctx, resp).await,
         };
         match self.service.wechat_login(req).await {
             Ok(r) => {
                 let data = serde_json::to_value(&r)
                     .map_err(|e| RouterError::SerializeError(e.to_string()))?;
-                self.reply(ctx, ok_response(data)).await
+                reply(ctx, ok_response(data)).await
             }
-            Err(e) => self.reply(ctx, error_response(&e)).await,
+            Err(e) => reply(ctx, error_response(&e)).await,
         }
     }
 
     async fn refresh(&self, ctx: &mut Context) -> Result<(), RouterError> {
         let req: RefreshReq = match read_json(ctx).await {
             Ok(r) => r,
-            Err(resp) => return self.reply(ctx, resp).await,
+            Err(resp) => return reply(ctx, resp).await,
         };
         match self.service.refresh(&req.refresh_token).await {
             Ok(r) => {
                 let data = serde_json::to_value(&r)
                     .map_err(|e| RouterError::SerializeError(e.to_string()))?;
-                self.reply(ctx, ok_response(data)).await
+                reply(ctx, ok_response(data)).await
             }
-            Err(e) => self.reply(ctx, error_response(&e)).await,
+            Err(e) => reply(ctx, error_response(&e)).await,
         }
     }
 
     async fn logout(&self, ctx: &mut Context) -> Result<(), RouterError> {
         let user_id = match current_user_id(ctx) {
             Ok(id) => id,
-            Err(resp) => return self.reply(ctx, resp).await,
+            Err(resp) => return reply(ctx, resp).await,
         };
         match self.service.logout(user_id).await {
             // token_version +1：此前签发的 refresh 全部失效（无状态 JWT 撤销闭环）
-            Ok(_) => self
-                .reply(ctx, ok_response(serde_json::json!({ "logout": true })))
+            Ok(_) => reply(ctx, ok_response(serde_json::json!({ "logout": true })))
                 .await,
-            Err(e) => self.reply(ctx, error_response(&e)).await,
+            Err(e) => reply(ctx, error_response(&e)).await,
         }
     }
 
@@ -102,18 +100,17 @@ impl AuthController {
     async fn bind_wechat(&self, ctx: &mut Context) -> Result<(), RouterError> {
         let user_id = match current_user_id(ctx) {
             Ok(id) => id,
-            Err(resp) => return self.reply(ctx, resp).await,
+            Err(resp) => return reply(ctx, resp).await,
         };
         // 请求体与微信登录一致：{ "code": "<wx.login 返回的 code>" }
         let req: WechatLoginReq = match read_json(ctx).await {
             Ok(r) => r,
-            Err(resp) => return self.reply(ctx, resp).await,
+            Err(resp) => return reply(ctx, resp).await,
         };
         match self.service.bind_wechat(user_id, &req.code).await {
-            Ok(_) => self
-                .reply(ctx, ok_response(serde_json::json!({ "bound": true })))
+            Ok(_) => reply(ctx, ok_response(serde_json::json!({ "bound": true })))
                 .await,
-            Err(e) => self.reply(ctx, error_response(&e)).await,
+            Err(e) => reply(ctx, error_response(&e)).await,
         }
     }
 
@@ -121,21 +118,20 @@ impl AuthController {
     async fn change_password(&self, ctx: &mut Context) -> Result<(), RouterError> {
         let user_id = match current_user_id(ctx) {
             Ok(id) => id,
-            Err(resp) => return self.reply(ctx, resp).await,
+            Err(resp) => return reply(ctx, resp).await,
         };
         let req: ChangePasswordReq = match read_json(ctx).await {
             Ok(r) => r,
-            Err(resp) => return self.reply(ctx, resp).await,
+            Err(resp) => return reply(ctx, resp).await,
         };
         match self
             .service
             .change_password(user_id, &req.old_password, &req.new_password)
             .await
         {
-            Ok(_) => self
-                .reply(ctx, ok_response(serde_json::json!({ "changed": true })))
+            Ok(_) => reply(ctx, ok_response(serde_json::json!({ "changed": true })))
                 .await,
-            Err(e) => self.reply(ctx, error_response(&e)).await,
+            Err(e) => reply(ctx, error_response(&e)).await,
         }
     }
 
@@ -143,21 +139,20 @@ impl AuthController {
     async fn bind_phone(&self, ctx: &mut Context) -> Result<(), RouterError> {
         let user_id = match current_user_id(ctx) {
             Ok(id) => id,
-            Err(resp) => return self.reply(ctx, resp).await,
+            Err(resp) => return reply(ctx, resp).await,
         };
         let req: BindPhoneReq = match read_json(ctx).await {
             Ok(r) => r,
-            Err(resp) => return self.reply(ctx, resp).await,
+            Err(resp) => return reply(ctx, resp).await,
         };
         match self
             .service
             .bind_phone(user_id, &req.password, &req.new_phone)
             .await
         {
-            Ok(_) => self
-                .reply(ctx, ok_response(serde_json::json!({ "bound": true })))
+            Ok(_) => reply(ctx, ok_response(serde_json::json!({ "bound": true })))
                 .await,
-            Err(e) => self.reply(ctx, error_response(&e)).await,
+            Err(e) => reply(ctx, error_response(&e)).await,
         }
     }
 
@@ -165,28 +160,18 @@ impl AuthController {
     async fn me(&self, ctx: &mut Context) -> Result<(), RouterError> {
         let user_id = match current_user_id(ctx) {
             Ok(id) => id,
-            Err(resp) => return self.reply(ctx, resp).await,
+            Err(resp) => return reply(ctx, resp).await,
         };
         match self.service.me(user_id).await {
             Ok(u) => {
                 let data = serde_json::to_value(&u)
                     .map_err(|e| RouterError::SerializeError(e.to_string()))?;
-                self.reply(ctx, ok_response(data)).await
+                reply(ctx, ok_response(data)).await
             }
-            Err(e) => self.reply(ctx, error_response(&e)).await,
+            Err(e) => reply(ctx, error_response(&e)).await,
         }
     }
 
-    /// 将已构造好的响应写入 Context（bee 管线以 HTTP 200 + 业务码信封返回）
-    async fn reply(&self, ctx: &mut Context, resp: Response) -> Result<(), RouterError> {
-        let bytes = axum::body::to_bytes(resp.into_body(), 2 * 1024 * 1024)
-            .await
-            .map_err(|e| RouterError::Internal(e.to_string()))?;
-        let value: serde_json::Value = serde_json::from_slice(&bytes)
-            .map_err(|e| RouterError::SerializeError(e.to_string()))?;
-        ctx.json(&value)?;
-        Ok(())
-    }
 }
 
 #[async_trait]

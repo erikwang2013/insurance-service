@@ -4,15 +4,14 @@
 //! → INSERT orders → 回读。订单号格式：`OD{UTC毫秒}{4位hex}`；状态初始 CREATED。
 //! 金额只取报价的 premium：优惠恒为 0，实付=应付，客户端无法指定价格。
 
-use chrono::{DateTime, Utc};
+use chrono::Utc;
 use mysql_async::prelude::Queryable;
-use mysql_async::Value;
+use mysql_async::{Row, Value};
 use rust_decimal::Decimal;
 use serde::Deserialize;
 use uuid::Uuid;
 
-use crate::db::db_error;
-use crate::db::Db;
+use crate::db::{db_error, dec_opt_row, dt_opt_row, dt_row, value_opt_str, Db};
 use crate::error::{AppError, Result};
 use crate::models::order::Order;
 
@@ -79,10 +78,10 @@ impl OrderService {
                     let product_id: i64 = q.get("product_id").unwrap_or_default();
                     let holder_name: String = q.get("holder_name").unwrap_or_default();
                     let insurance_amount: Decimal =
-                        dec_from_row(&q, "insurance_amount").unwrap_or_default();
+                        dec_opt_row(&q, "insurance_amount").unwrap_or_default();
                     let term_months: i32 = q.get("term_months").unwrap_or_default();
                     let premium: Decimal =
-                        dec_from_row(&q, "premium").unwrap_or_default();
+                        dec_opt_row(&q, "premium").unwrap_or_default();
 
                     // 2) 查产品名称 + 币种（走同一事务，避免读到 stale 行）
                     let prod: Option<mysql_async::Row> = tx
@@ -196,32 +195,6 @@ impl OrderService {
 
 // ---------- helpers ----------
 
-use mysql_async::Row;
-use chrono::NaiveDateTime;
-
-/// 读行 → DateTime<Utc>
-fn dt_row(row: &Row, col: &str) -> DateTime<Utc> {
-    row.get::<NaiveDateTime, &str>(col)
-        .unwrap_or_default()
-        .and_utc()
-}
-
-fn dt_opt_row(row: &Row, col: &str) -> Option<DateTime<Utc>> {
-    row.get::<Option<NaiveDateTime>, &str>(col)
-        .flatten()
-        .map(|d| d.and_utc())
-}
-
-fn dec_from_row(row: &Row, col: &str) -> Option<Decimal> {
-    row.get::<Option<String>, &str>(col)
-        .flatten()
-        .and_then(|s| s.parse().ok())
-}
-
-fn value_opt_str(v: Option<String>) -> Value {
-    v.map(Value::from).unwrap_or(Value::NULL)
-}
-
 fn row_to_order(row: &Row) -> Result<Order> {
     Ok(Order {
         id: row.get("id").unwrap_or_default(),
@@ -231,11 +204,11 @@ fn row_to_order(row: &Row) -> Result<Order> {
         product_id: row.get("product_id").unwrap_or_default(),
         product_name: row.get("product_name").unwrap_or_default(),
         holder_name: row.get("holder_name").unwrap_or_default(),
-        insurance_amount: dec_from_row(row, "insurance_amount").unwrap_or_default(),
+        insurance_amount: dec_opt_row(row, "insurance_amount").unwrap_or_default(),
         term_months: row.get("term_months").unwrap_or_default(),
-        total_amount: dec_from_row(row, "total_amount").unwrap_or_default(),
-        discount_amount: dec_from_row(row, "discount_amount").unwrap_or_default(),
-        payable_amount: dec_from_row(row, "payable_amount").unwrap_or_default(),
+        total_amount: dec_opt_row(row, "total_amount").unwrap_or_default(),
+        discount_amount: dec_opt_row(row, "discount_amount").unwrap_or_default(),
+        payable_amount: dec_opt_row(row, "payable_amount").unwrap_or_default(),
         currency: row.get("currency").unwrap_or_default(),
         status: row.get("status").unwrap_or_default(),
         paid_at: dt_opt_row(row, "paid_at"),

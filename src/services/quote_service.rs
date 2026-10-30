@@ -7,15 +7,17 @@
 //! 不再信任请求体中的 premium。
 
 use chrono::NaiveDate;
-use chrono::{DateTime, Utc};
+use chrono::Utc;
 use mysql_async::prelude::Queryable;
 use mysql_async::Value;
 use rust_decimal::Decimal;
 use serde::Deserialize;
 use uuid::Uuid;
 
-use crate::db::db_error;
-use crate::db::Db;
+use crate::db::{
+    date_opt_row, db_error, dec_opt_row, dt_opt_row, dt_row, json_opt_row, value_opt_dec,
+    value_opt_int, value_opt_str, value_opt_vec, Db,
+};
 use crate::error::{AppError, Result};
 use crate::models::insurance_product::InsuranceProduct;
 use crate::models::quote::Quote;
@@ -298,40 +300,6 @@ fn compute_premium(amount: Decimal, rate: Decimal) -> Result<Decimal> {
 // ---------- helpers: 行读取 ----------
 
 use mysql_async::Row;
-use chrono::NaiveDateTime;
-
-/// 读行 → DateTime<Utc>
-fn dt_row(row: &Row, col: &str) -> DateTime<Utc> {
-    row.get::<NaiveDateTime, &str>(col)
-        .unwrap_or_default()
-        .and_utc()
-}
-
-/// 读行 → Option<DateTime<Utc>>
-fn dt_opt_row(row: &Row, col: &str) -> Option<DateTime<Utc>> {
-    row.get::<Option<NaiveDateTime>, &str>(col)
-        .flatten()
-        .map(|d| d.and_utc())
-}
-
-/// 读行 → Option<Decimal>（DECIMAL 列以字符串到达）
-fn dec_opt_row(row: &Row, col: &str) -> Option<Decimal> {
-    row.get::<Option<String>, &str>(col)
-        .flatten()
-        .and_then(|s| s.parse().ok())
-}
-
-/// 读行 → Option<NaiveDate>（DATE 列经 mysql_async chrono feature 直接解码为 NaiveDate，非字符串）
-fn date_opt_row(row: &Row, col: &str) -> Option<NaiveDate> {
-    row.get::<Option<NaiveDate>, &str>(col).flatten()
-}
-
-/// 读行 → Option<serde_json::Value>（JSON 文本）
-fn json_opt_row(row: &Row, col: &str) -> Option<serde_json::Value> {
-    row.get::<Option<String>, &str>(col)
-        .flatten()
-        .and_then(|s| serde_json::from_str(&s).ok())
-}
 
 /// 从 Row 重建 Quote
 fn row_to_quote(row: &Row) -> Result<Quote> {
@@ -359,24 +327,6 @@ fn row_to_quote(row: &Row) -> Result<Quote> {
     })
 }
 
-// ---------- 参数构造 helper（Option → Value） ----------
-
-fn value_opt_str(v: Option<String>) -> Value {
-    v.map(Value::from).unwrap_or(Value::NULL)
-}
-
-fn value_opt_vec(v: Option<Vec<u8>>) -> Value {
-    v.map(Value::from).unwrap_or(Value::NULL)
-}
-
-fn value_opt_int(v: Option<i32>) -> Value {
-    v.map(Value::from).unwrap_or(Value::NULL)
-}
-
-fn value_opt_dec(v: Option<Decimal>) -> Value {
-    v.map(|d| Value::from(d.to_string()))
-        .unwrap_or(Value::NULL)
-}
 
 #[cfg(test)]
 mod tests {

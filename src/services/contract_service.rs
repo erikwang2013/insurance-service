@@ -2,15 +2,14 @@
 //!
 //! 保单签发后生成合同（Mock 直签）：校验保单 ACTIVE → INSERT contract(COMPLETED) → 回读。
 
-use chrono::{DateTime, NaiveDateTime, Utc};
+use chrono::Utc;
 use mysql_async::prelude::Queryable;
 use mysql_async::Value;
 use mysql_async::Row;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::db::db_error;
-use crate::db::Db;
+use crate::db::{db_error, dt_opt_row, dt_row, Db};
 use crate::error::{AppError, Result};
 use crate::models::contract::Contract;
 
@@ -157,13 +156,6 @@ impl ContractService {
 #[allow(non_snake_case)]
 mod PolicyStatus {
     pub const ACTIVE: &str = "ACTIVE";
-}
-
-fn dt_row(row: &Row, col: &str) -> DateTime<Utc> {
-    row.get::<NaiveDateTime, &str>(col).unwrap_or_default().and_utc()
-}
-fn dt_opt_row(row: &Row, col: &str) -> Option<DateTime<Utc>> {
-    row.get::<Option<NaiveDateTime>, &str>(col).flatten().map(|d| d.and_utc())
 }
 
 fn row_to_contract(row: &Row) -> Result<Contract> {

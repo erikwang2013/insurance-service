@@ -3,7 +3,7 @@
 //! MockProvider：预支付直接落 CREATED；回调须携带 `X-Callback-Token`（常量时间比较），
 //! 成功后同一事务内把订单置为 PAID；相同交易号/终态重复回调不重复流转。
 
-use chrono::{DateTime, NaiveDateTime, Utc};
+use chrono::Utc;
 use mysql_async::prelude::Queryable;
 use mysql_async::Value;
 use mysql_async::Row;
@@ -11,8 +11,7 @@ use rust_decimal::Decimal;
 use serde::Deserialize;
 use uuid::Uuid;
 
-use crate::db::db_error;
-use crate::db::Db;
+use crate::db::{db_error, dec_opt_row, dt_opt_row, dt_row, json_opt_row, json_val, Db};
 use crate::error::{AppError, Result};
 use crate::models::payment::Payment;
 
@@ -286,22 +285,6 @@ fn callback_token_matches(expected: &str, provided: &str) -> bool {
         return false;
     }
     a.iter().zip(b.iter()).fold(0u8, |acc, (x, y)| acc | (x ^ y)) == 0
-}
-
-fn dt_row(row: &Row, col: &str) -> DateTime<Utc> {
-    row.get::<NaiveDateTime, &str>(col).unwrap_or_default().and_utc()
-}
-fn dt_opt_row(row: &Row, col: &str) -> Option<DateTime<Utc>> {
-    row.get::<Option<NaiveDateTime>, &str>(col).flatten().map(|d| d.and_utc())
-}
-fn dec_opt_row(row: &Row, col: &str) -> Option<Decimal> {
-    row.get::<Option<String>, &str>(col).flatten().and_then(|s| s.parse().ok())
-}
-fn json_val(v: Option<serde_json::Value>) -> Value {
-    v.and_then(|j| serde_json::to_string(&j).ok()).map(Value::from).unwrap_or(Value::NULL)
-}
-fn json_opt_row(row: &Row, col: &str) -> Option<serde_json::Value> {
-    row.get::<Option<String>, &str>(col).flatten().and_then(|s| serde_json::from_str(&s).ok())
 }
 
 fn row_to_payment(row: &Row) -> Result<Payment> {

@@ -2,7 +2,6 @@
 
 use async_trait::async_trait;
 use axum::http::StatusCode;
-use axum::response::Response;
 
 use bee_rust::bee_router::context::RouterError;
 use bee_rust::bee_router::{Context, Controller};
@@ -11,7 +10,7 @@ use crate::models::policy::EndorseBeneficiariesReq;
 use crate::services::policy_service::{IssuePolicyReq, PolicyService};
 
 use super::{
-    current_user_id, error_response, json_envelope, ok_response, query_map, read_json,
+    current_user_id, error_response, json_envelope, ok_response, query_map, read_json, reply,
 };
 
 /// 退保请求体（原因可选，写入审计日志）
@@ -34,26 +33,26 @@ impl PolicyController {
     async fn detail(&self, ctx: &mut Context) -> Result<(), RouterError> {
         let id = match ctx.param("id").and_then(|s| s.parse::<i64>().ok()) {
             Some(id) => id,
-            None => return self.reply(ctx, json_envelope(40000, "保单 id 参数无效")).await,
+            None => return reply(ctx, json_envelope(40000, "保单 id 参数无效")).await,
         };
         let user_id = match current_user_id(ctx) {
             Ok(id) => id,
-            Err(resp) => return self.reply(ctx, resp).await,
+            Err(resp) => return reply(ctx, resp).await,
         };
         match self.service.by_id(id, user_id).await {
             Ok(p) => {
                 let data = serde_json::to_value(&p)
                     .map_err(|e| RouterError::SerializeError(e.to_string()))?;
-                self.reply(ctx, ok_response(data)).await
+                reply(ctx, ok_response(data)).await
             }
-            Err(e) => self.reply(ctx, error_response(&e)).await,
+            Err(e) => reply(ctx, error_response(&e)).await,
         }
     }
 
     async fn my_policies(&self, ctx: &mut Context) -> Result<(), RouterError> {
         let user_id = match current_user_id(ctx) {
             Ok(id) => id,
-            Err(resp) => return self.reply(ctx, resp).await,
+            Err(resp) => return reply(ctx, resp).await,
         };
         let q = query_map(ctx.request.uri().query());
         let page = q.get("page").and_then(|s| s.parse().ok()).unwrap_or(1);
@@ -65,9 +64,9 @@ impl PolicyController {
                     "page": page,
                     "size": size,
                 });
-                self.reply(ctx, ok_response(data)).await
+                reply(ctx, ok_response(data)).await
             }
-            Err(e) => self.reply(ctx, error_response(&e)).await,
+            Err(e) => reply(ctx, error_response(&e)).await,
         }
     }
 
@@ -75,19 +74,19 @@ impl PolicyController {
     async fn issue(&self, ctx: &mut Context) -> Result<(), RouterError> {
         let user_id = match current_user_id(ctx) {
             Ok(id) => id,
-            Err(resp) => return self.reply(ctx, resp).await,
+            Err(resp) => return reply(ctx, resp).await,
         };
         let req: IssuePolicyReq = match read_json(ctx).await {
             Ok(r) => r,
-            Err(resp) => return self.reply(ctx, resp).await,
+            Err(resp) => return reply(ctx, resp).await,
         };
         match self.service.issue(user_id, req).await {
             Ok(p) => {
                 let data = serde_json::to_value(&p)
                     .map_err(|e| RouterError::SerializeError(e.to_string()))?;
-                self.reply(ctx, ok_response(data)).await
+                reply(ctx, ok_response(data)).await
             }
-            Err(e) => self.reply(ctx, error_response(&e)).await,
+            Err(e) => reply(ctx, error_response(&e)).await,
         }
     }
 
@@ -95,23 +94,23 @@ impl PolicyController {
     async fn lapse(&self, ctx: &mut Context) -> Result<(), RouterError> {
         let id = match ctx.param("id").and_then(|s| s.parse::<i64>().ok()) {
             Some(id) => id,
-            None => return self.reply(ctx, json_envelope(40000, "保单 id 参数无效")).await,
+            None => return reply(ctx, json_envelope(40000, "保单 id 参数无效")).await,
         };
         let user_id = match current_user_id(ctx) {
             Ok(id) => id,
-            Err(resp) => return self.reply(ctx, resp).await,
+            Err(resp) => return reply(ctx, resp).await,
         };
         let req: LapseReq = match read_json(ctx).await {
             Ok(r) => r,
-            Err(resp) => return self.reply(ctx, resp).await,
+            Err(resp) => return reply(ctx, resp).await,
         };
         match self.service.lapse(user_id, id, req.reason).await {
             Ok(p) => {
                 let data = serde_json::to_value(&p)
                     .map_err(|e| RouterError::SerializeError(e.to_string()))?;
-                self.reply(ctx, ok_response(data)).await
+                reply(ctx, ok_response(data)).await
             }
-            Err(e) => self.reply(ctx, error_response(&e)).await,
+            Err(e) => reply(ctx, error_response(&e)).await,
         }
     }
 
@@ -119,34 +118,25 @@ impl PolicyController {
     async fn endorse(&self, ctx: &mut Context) -> Result<(), RouterError> {
         let id = match ctx.param("id").and_then(|s| s.parse::<i64>().ok()) {
             Some(id) => id,
-            None => return self.reply(ctx, json_envelope(40000, "保单 id 参数无效")).await,
+            None => return reply(ctx, json_envelope(40000, "保单 id 参数无效")).await,
         };
         let user_id = match current_user_id(ctx) {
             Ok(id) => id,
-            Err(resp) => return self.reply(ctx, resp).await,
+            Err(resp) => return reply(ctx, resp).await,
         };
         let req: EndorseBeneficiariesReq = match read_json(ctx).await {
             Ok(r) => r,
-            Err(resp) => return self.reply(ctx, resp).await,
+            Err(resp) => return reply(ctx, resp).await,
         };
         match self.service.endorse_beneficiaries(user_id, id, req).await {
             Ok((policy, bens)) => {
                 let data = serde_json::json!({ "policy": policy, "beneficiaries": bens });
-                self.reply(ctx, ok_response(data)).await
+                reply(ctx, ok_response(data)).await
             }
-            Err(e) => self.reply(ctx, error_response(&e)).await,
+            Err(e) => reply(ctx, error_response(&e)).await,
         }
     }
 
-    async fn reply(&self, ctx: &mut Context, resp: Response) -> Result<(), RouterError> {
-        let bytes = axum::body::to_bytes(resp.into_body(), 2 * 1024 * 1024)
-            .await
-            .map_err(|e| RouterError::Internal(e.to_string()))?;
-        let value: serde_json::Value = serde_json::from_slice(&bytes)
-            .map_err(|e| RouterError::SerializeError(e.to_string()))?;
-        ctx.json(&value)?;
-        Ok(())
-    }
 }
 
 #[async_trait]

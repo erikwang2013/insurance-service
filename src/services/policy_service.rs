@@ -4,7 +4,7 @@
 //! 另提供退保（lapse，ACTIVE → SURRENDERED）与受益人批改。状态机见 `Policy` 模型注释：
 //! `PENDING_ISSUE → ACTIVE → EXPIRED / CANCELLED / SURRENDERED / LAPSED`。
 
-use chrono::{DateTime, NaiveDate, NaiveDateTime, Utc};
+use chrono::{NaiveDate, Utc};
 use mysql_async::prelude::Queryable;
 use mysql_async::Value;
 use mysql_async::Row;
@@ -12,8 +12,9 @@ use rust_decimal::Decimal;
 use serde::Deserialize;
 use uuid::Uuid;
 
-use crate::db::db_error;
-use crate::db::Db;
+use crate::db::{
+    db_error, dec_opt_row, dt_opt_row, dt_row, json_opt_row, json_val, value_opt_int, Db,
+};
 use crate::error::{AppError, Result};
 use crate::models::policy::{validate_beneficiaries, Beneficiary, EndorseBeneficiariesReq, Policy};
 
@@ -358,22 +359,6 @@ mod OrderStatus {
     pub const POLICY_ISSUED: &str = "POLICY_ISSUED";
 }
 
-fn dt_row(row: &Row, col: &str) -> DateTime<Utc> {
-    row.get::<NaiveDateTime, &str>(col).unwrap_or_default().and_utc()
-}
-fn dec_opt_row(row: &Row, col: &str) -> Option<Decimal> {
-    row.get::<Option<String>, &str>(col).flatten().and_then(|s| s.parse().ok())
-}
-fn json_val(v: Option<serde_json::Value>) -> Value {
-    v.and_then(|j| serde_json::to_string(&j).ok()).map(Value::from).unwrap_or(Value::NULL)
-}
-fn json_opt_row(row: &Row, col: &str) -> Option<serde_json::Value> {
-    row.get::<Option<String>, &str>(col).flatten().and_then(|s| serde_json::from_str(&s).ok())
-}
-fn value_opt_int(v: Option<i64>) -> Value {
-    v.map(Value::from).unwrap_or(Value::NULL)
-}
-
 fn bens_json(rows: &[Row]) -> serde_json::Value {
     let list = rows.iter().map(row_to_beneficiary).collect::<Result<Vec<_>>>();
     serde_json::to_value(list.unwrap_or_default()).unwrap_or(serde_json::Value::Null)
@@ -418,7 +403,4 @@ fn row_to_policy(row: &Row) -> Result<Policy> {
         updated_at: dt_row(row, "updated_at"),
         deleted_at: dt_opt_row(row, "deleted_at"),
     })
-}
-fn dt_opt_row(row: &Row, col: &str) -> Option<DateTime<Utc>> {
-    row.get::<Option<NaiveDateTime>, &str>(col).flatten().map(|d| d.and_utc())
 }

@@ -193,6 +193,17 @@ pub(crate) async fn read_json<T: serde::de::DeserializeOwned>(ctx: &mut Context)
     }
 }
 
+/// 将已构造好的响应序列化写入 Context（各控制器共用）
+pub(crate) async fn reply(ctx: &mut Context, resp: Response) -> Result<(), RouterError> {
+    let bytes = axum::body::to_bytes(resp.into_body(), 2 * 1024 * 1024)
+        .await
+        .map_err(|e| RouterError::Internal(e.to_string()))?;
+    let value: serde_json::Value = serde_json::from_slice(&bytes)
+        .map_err(|e| RouterError::SerializeError(e.to_string()))?;
+    ctx.json(&value)?;
+    Ok(())
+}
+
 /// 构造业务信封响应（HTTP 200 + 业务码）
 pub(crate) fn json_envelope(code: i32, msg: impl Into<String>) -> Response {
     let envelope: ApiResponse = ResponseEnvelope::err(code, msg);

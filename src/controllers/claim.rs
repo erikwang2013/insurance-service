@@ -2,7 +2,6 @@
 
 use async_trait::async_trait;
 use axum::http::StatusCode;
-use axum::response::Response;
 
 use bee_rust::bee_router::context::RouterError;
 use bee_rust::bee_router::{Context, Controller};
@@ -13,7 +12,7 @@ use crate::services::claim_service::{
 
 use super::{
     current_user_id, error_response, json_envelope, ok_response, query_map, read_json,
-    require_operator,
+    reply, require_operator,
 };
 
 /// 理赔控制器（持有 ClaimService，按请求路径与方法分派动作）
@@ -29,53 +28,53 @@ impl ClaimController {
     async fn create(&self, ctx: &mut Context) -> Result<(), RouterError> {
         let user_id = match current_user_id(ctx) {
             Ok(id) => id,
-            Err(resp) => return self.reply(ctx, resp).await,
+            Err(resp) => return reply(ctx, resp).await,
         };
         let req: CreateClaimReq = match read_json(ctx).await {
             Ok(r) => r,
-            Err(resp) => return self.reply(ctx, resp).await,
+            Err(resp) => return reply(ctx, resp).await,
         };
         match self.service.create(user_id, req).await {
             Ok(c) => {
                 let data = serde_json::to_value(&c)
                     .map_err(|e| RouterError::SerializeError(e.to_string()))?;
-                self.reply(ctx, ok_response(data)).await
+                reply(ctx, ok_response(data)).await
             }
-            Err(e) => self.reply(ctx, error_response(&e)).await,
+            Err(e) => reply(ctx, error_response(&e)).await,
         }
     }
 
     async fn review(&self, ctx: &mut Context) -> Result<(), RouterError> {
         let claim_id = match ctx.param("id").and_then(|s| s.parse::<i64>().ok()) {
             Some(id) => id,
-            None => return self.reply(ctx, json_envelope(40000, "理赔单 id 参数无效")).await,
+            None => return reply(ctx, json_envelope(40000, "理赔单 id 参数无效")).await,
         };
         // 中间件已按路由拦截；控制器再按 token 角色防御一层。
         if let Err(resp) = require_operator(ctx) {
-            return self.reply(ctx, resp).await;
+            return reply(ctx, resp).await;
         }
         let reviewer_id = match current_user_id(ctx) {
             Ok(id) => id,
-            Err(resp) => return self.reply(ctx, resp).await,
+            Err(resp) => return reply(ctx, resp).await,
         };
         let req: ReviewClaimReq = match read_json(ctx).await {
             Ok(r) => r,
-            Err(resp) => return self.reply(ctx, resp).await,
+            Err(resp) => return reply(ctx, resp).await,
         };
         match self.service.review(claim_id, reviewer_id, req).await {
             Ok(c) => {
                 let data = serde_json::to_value(&c)
                     .map_err(|e| RouterError::SerializeError(e.to_string()))?;
-                self.reply(ctx, ok_response(data)).await
+                reply(ctx, ok_response(data)).await
             }
-            Err(e) => self.reply(ctx, error_response(&e)).await,
+            Err(e) => reply(ctx, error_response(&e)).await,
         }
     }
 
     async fn my_claims(&self, ctx: &mut Context) -> Result<(), RouterError> {
         let user_id = match current_user_id(ctx) {
             Ok(id) => id,
-            Err(resp) => return self.reply(ctx, resp).await,
+            Err(resp) => return reply(ctx, resp).await,
         };
         let q = query_map(ctx.request.uri().query());
         let page = q.get("page").and_then(|s| s.parse().ok()).unwrap_or(1);
@@ -87,9 +86,9 @@ impl ClaimController {
                     "page": page,
                     "size": size,
                 });
-                self.reply(ctx, ok_response(data)).await
+                reply(ctx, ok_response(data)).await
             }
-            Err(e) => self.reply(ctx, error_response(&e)).await,
+            Err(e) => reply(ctx, error_response(&e)).await,
         }
     }
 
@@ -97,23 +96,23 @@ impl ClaimController {
     async fn upload_documents(&self, ctx: &mut Context) -> Result<(), RouterError> {
         let claim_id = match ctx.param("id").and_then(|s| s.parse::<i64>().ok()) {
             Some(id) => id,
-            None => return self.reply(ctx, json_envelope(40000, "理赔单 id 参数无效")).await,
+            None => return reply(ctx, json_envelope(40000, "理赔单 id 参数无效")).await,
         };
         let user_id = match current_user_id(ctx) {
             Ok(id) => id,
-            Err(resp) => return self.reply(ctx, resp).await,
+            Err(resp) => return reply(ctx, resp).await,
         };
         let req: UploadDocumentReq = match read_json(ctx).await {
             Ok(r) => r,
-            Err(resp) => return self.reply(ctx, resp).await,
+            Err(resp) => return reply(ctx, resp).await,
         };
         match self.service.add_document(claim_id, user_id, req).await {
             Ok(doc) => {
                 let data = serde_json::to_value(&doc)
                     .map_err(|e| RouterError::SerializeError(e.to_string()))?;
-                self.reply(ctx, ok_response(data)).await
+                reply(ctx, ok_response(data)).await
             }
-            Err(e) => self.reply(ctx, error_response(&e)).await,
+            Err(e) => reply(ctx, error_response(&e)).await,
         }
     }
 
@@ -121,31 +120,21 @@ impl ClaimController {
     async fn list_documents(&self, ctx: &mut Context) -> Result<(), RouterError> {
         let claim_id = match ctx.param("id").and_then(|s| s.parse::<i64>().ok()) {
             Some(id) => id,
-            None => return self.reply(ctx, json_envelope(40000, "理赔单 id 参数无效")).await,
+            None => return reply(ctx, json_envelope(40000, "理赔单 id 参数无效")).await,
         };
         let user_id = match current_user_id(ctx) {
             Ok(id) => id,
-            Err(resp) => return self.reply(ctx, resp).await,
+            Err(resp) => return reply(ctx, resp).await,
         };
         match self.service.list_documents(claim_id, user_id).await {
             Ok(list) => {
                 let data = serde_json::json!({ "list": list });
-                self.reply(ctx, ok_response(data)).await
+                reply(ctx, ok_response(data)).await
             }
-            Err(e) => self.reply(ctx, error_response(&e)).await,
+            Err(e) => reply(ctx, error_response(&e)).await,
         }
     }
 
-    /// 将响应写入 Context（与 auth/product 控制器同模式）
-    async fn reply(&self, ctx: &mut Context, resp: Response) -> Result<(), RouterError> {
-        let bytes = axum::body::to_bytes(resp.into_body(), 2 * 1024 * 1024)
-            .await
-            .map_err(|e| RouterError::Internal(e.to_string()))?;
-        let value: serde_json::Value = serde_json::from_slice(&bytes)
-            .map_err(|e| RouterError::SerializeError(e.to_string()))?;
-        ctx.json(&value)?;
-        Ok(())
-    }
 }
 
 #[async_trait]

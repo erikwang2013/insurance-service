@@ -6,7 +6,6 @@
 
 use async_trait::async_trait;
 use axum::http::StatusCode;
-use axum::response::Response;
 use chrono::{NaiveDate, NaiveDateTime};
 use mysql_async::prelude::Queryable;
 use mysql_async::{Row, Value};
@@ -14,7 +13,7 @@ use mysql_async::{Row, Value};
 use bee_rust::bee_router::context::RouterError;
 use bee_rust::bee_router::{Context, Controller};
 
-use crate::db::{db_error, Db};
+use crate::db::{db_error, json_opt_row, Db};
 use crate::error::{AppError, Result as AppResult};
 use crate::models::audit_log::AuditLog;
 use crate::models::user::User;
@@ -24,7 +23,7 @@ use crate::services::product_service::{
 
 use super::{
     current_user_id, error_response, json_envelope, ok_response, query_map, read_json,
-    require_operator,
+    reply, require_operator,
 };
 
 /// 运营侧商品控制器（持有 Db，按请求路径分派动作）
@@ -40,51 +39,51 @@ impl AdminController {
     async fn upsert(&self, ctx: &mut Context) -> Result<(), RouterError> {
         // 中间件已按路由拦截；控制器再按 token 角色防御一层。
         if let Err(resp) = require_operator(ctx) {
-            return self.reply(ctx, resp).await;
+            return reply(ctx, resp).await;
         }
         let operator_id = match current_user_id(ctx) {
             Ok(id) => id,
-            Err(resp) => return self.reply(ctx, resp).await,
+            Err(resp) => return reply(ctx, resp).await,
         };
         let req: AdminUpsertReq = match read_json(ctx).await {
             Ok(r) => r,
-            Err(resp) => return self.reply(ctx, resp).await,
+            Err(resp) => return reply(ctx, resp).await,
         };
         match admin_upsert(&self.db, operator_id, &req).await {
             Ok(p) => {
                 let data = serde_json::to_value(&p)
                     .map_err(|e| RouterError::SerializeError(e.to_string()))?;
-                self.reply(ctx, ok_response(data)).await
+                reply(ctx, ok_response(data)).await
             }
-            Err(e) => self.reply(ctx, error_response(&e)).await,
+            Err(e) => reply(ctx, error_response(&e)).await,
         }
     }
 
     async fn change_status(&self, ctx: &mut Context) -> Result<(), RouterError> {
         if let Err(resp) = require_operator(ctx) {
-            return self.reply(ctx, resp).await;
+            return reply(ctx, resp).await;
         }
         let product_id = match ctx.param("id").and_then(|s| s.parse::<i64>().ok()) {
             Some(id) => id,
             None => {
-                return self.reply(ctx, json_envelope(40000, "商品 id 参数无效")).await;
+                return reply(ctx, json_envelope(40000, "商品 id 参数无效")).await;
             }
         };
         let operator_id = match current_user_id(ctx) {
             Ok(id) => id,
-            Err(resp) => return self.reply(ctx, resp).await,
+            Err(resp) => return reply(ctx, resp).await,
         };
         let req: AdminStatusReq = match read_json(ctx).await {
             Ok(r) => r,
-            Err(resp) => return self.reply(ctx, resp).await,
+            Err(resp) => return reply(ctx, resp).await,
         };
         match admin_change_status(&self.db, product_id, operator_id, &req).await {
             Ok(p) => {
                 let data = serde_json::to_value(&p)
                     .map_err(|e| RouterError::SerializeError(e.to_string()))?;
-                self.reply(ctx, ok_response(data)).await
+                reply(ctx, ok_response(data)).await
             }
-            Err(e) => self.reply(ctx, error_response(&e)).await,
+            Err(e) => reply(ctx, error_response(&e)).await,
         }
     }
 
@@ -94,7 +93,7 @@ impl AdminController {
     /// `page` 从 1 起、`size` 1..=100（缺省 1/20），按 id 倒序。
     async fn list(&self, ctx: &mut Context) -> Result<(), RouterError> {
         if let Err(resp) = require_operator(ctx) {
-            return self.reply(ctx, resp).await;
+            return reply(ctx, resp).await;
         }
         let q = query_map(ctx.request.uri().query());
         let status = q.get("status").map(String::as_str).unwrap_or_default();
@@ -107,9 +106,9 @@ impl AdminController {
                     "page": page,
                     "size": size,
                 });
-                self.reply(ctx, ok_response(data)).await
+                reply(ctx, ok_response(data)).await
             }
-            Err(e) => self.reply(ctx, error_response(&e)).await,
+            Err(e) => reply(ctx, error_response(&e)).await,
         }
     }
 
@@ -122,11 +121,11 @@ impl AdminController {
     /// （缺省 1/20）。按 `created_at DESC, id DESC` 排序，返回行 + 过滤后总数。
     async fn audit_logs(&self, ctx: &mut Context) -> Result<(), RouterError> {
         if let Err(resp) = require_operator(ctx) {
-            return self.reply(ctx, resp).await;
+            return reply(ctx, resp).await;
         }
         let operator_id = match current_user_id(ctx) {
             Ok(id) => id,
-            Err(resp) => return self.reply(ctx, resp).await,
+            Err(resp) => return reply(ctx, resp).await,
         };
         let q = query_map(ctx.request.uri().query());
         let page: u32 = q.get("page").and_then(|s| s.parse().ok()).unwrap_or(1);
@@ -142,8 +141,7 @@ impl AdminController {
                 let n: i64 = match v.parse() {
                     Ok(n) => n,
                     Err(_) => {
-                        return self
-                            .reply(ctx, json_envelope(40000, format!("{key} 参数无效")))
+                        return reply(ctx, json_envelope(40000, format!("{key} 参数无效")))
                             .await;
                     }
                 };
@@ -154,8 +152,7 @@ impl AdminController {
         for (key, col) in [("action", "action"), ("entity_type", "entity_type")] {
             if let Some(v) = q.get(key) {
                 if v.is_empty() {
-                    return self
-                        .reply(ctx, json_envelope(40000, format!("{key} 参数无效")))
+                    return reply(ctx, json_envelope(40000, format!("{key} 参数无效")))
                         .await;
                 }
                 conds.push(format!("{col} = ?"));
@@ -164,8 +161,7 @@ impl AdminController {
         }
         if let Some(v) = q.get("created_from") {
             let Some(dt) = parse_dt_start(v) else {
-                return self
-                    .reply(ctx, json_envelope(
+                return reply(ctx, json_envelope(
                         40000,
                         "created_from 时间格式无效（支持 YYYY-MM-DD 或 YYYY-MM-DD HH:MM:SS）",
                     ))
@@ -176,8 +172,7 @@ impl AdminController {
         }
         if let Some(v) = q.get("created_to") {
             let Some(dt) = parse_dt_end(v) else {
-                return self
-                    .reply(ctx, json_envelope(
+                return reply(ctx, json_envelope(
                         40000,
                         "created_to 时间格式无效（支持 YYYY-MM-DD 或 YYYY-MM-DD HH:MM:SS）",
                     ))
@@ -195,22 +190,12 @@ impl AdminController {
                     "page": page,
                     "size": size as u32,
                 });
-                self.reply(ctx, ok_response(data)).await
+                reply(ctx, ok_response(data)).await
             }
-            Err(e) => self.reply(ctx, error_response(&e)).await,
+            Err(e) => reply(ctx, error_response(&e)).await,
         }
     }
 
-    /// 将响应写入 Context（与 claim/product 控制器同模式）
-    async fn reply(&self, ctx: &mut Context, resp: Response) -> Result<(), RouterError> {
-        let bytes = axum::body::to_bytes(resp.into_body(), 2 * 1024 * 1024)
-            .await
-            .map_err(|e| RouterError::Internal(e.to_string()))?;
-        let value: serde_json::Value = serde_json::from_slice(&bytes)
-            .map_err(|e| RouterError::SerializeError(e.to_string()))?;
-        ctx.json(&value)?;
-        Ok(())
-    }
 }
 
 #[async_trait]
@@ -271,14 +256,6 @@ fn parse_dt_end(s: &str) -> Option<NaiveDateTime> {
     NaiveDate::parse_from_str(s, "%Y-%m-%d")
         .ok()?
         .and_hms_opt(23, 59, 59)
-}
-
-/// 读取 CAST 为 CHAR 的 JSON 列并解析（NULL → None；解析失败按 None 容错）。
-fn json_opt_row(row: &Row, col: &str) -> Option<serde_json::Value> {
-    match row.get::<Option<String>, _>(col) {
-        Some(Some(s)) => serde_json::from_str(&s).ok(),
-        _ => None,
-    }
 }
 
 /// 行 → AuditLog（created_at DATETIME(3) 经 chrono feature 读出 NaiveDateTime 后转 UTC）。

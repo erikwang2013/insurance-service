@@ -6,12 +6,12 @@
 use std::future::Future;
 use std::pin::Pin;
 
-use chrono::{DateTime, NaiveDateTime, Utc};
+use chrono::{DateTime, NaiveDate, NaiveDateTime, Utc};
 use rust_decimal::Decimal;
 
 use bee_rust::bee_orm::Model;
 use mysql_async::prelude::{FromRow, Queryable};
-use mysql_async::{Conn, Params, Pool, Row, Transaction, TxOpts};
+use mysql_async::{Conn, Params, Pool, Row, Transaction, TxOpts, Value};
 
 use crate::config::DbConfig;
 use crate::error::AppError;
@@ -110,24 +110,61 @@ pub(crate) fn db_error(e: mysql_async::Error) -> AppError {
 }
 
 /// 读取非空时间列（DATETIME(3)）
-fn dt(row: &Row, col: &str) -> DateTime<Utc> {
+pub(crate) fn dt_row(row: &Row, col: &str) -> DateTime<Utc> {
     row.get::<NaiveDateTime, &str>(col)
         .unwrap_or_default()
         .and_utc()
 }
 
 /// 读取可空时间列
-fn dt_opt(row: &Row, col: &str) -> Option<DateTime<Utc>> {
+pub(crate) fn dt_opt_row(row: &Row, col: &str) -> Option<DateTime<Utc>> {
     row.get::<Option<NaiveDateTime>, &str>(col)
         .flatten()
         .map(|d| d.and_utc())
 }
 
 /// 读取可空 DECIMAL 列（二进制协议以字符串到达）
-fn dec_opt(row: &Row, col: &str) -> Option<Decimal> {
+pub(crate) fn dec_opt_row(row: &Row, col: &str) -> Option<Decimal> {
     row.get::<Option<String>, &str>(col)
         .flatten()
         .and_then(|s| s.parse().ok())
+}
+
+/// 读取可空 DATE 列（mysql_async chrono feature 直接解码为 NaiveDate，非字符串）
+pub(crate) fn date_opt_row(row: &Row, col: &str) -> Option<NaiveDate> {
+    row.get::<Option<NaiveDate>, &str>(col).flatten()
+}
+
+/// 读取可空 JSON 列（JSON 文本）
+pub(crate) fn json_opt_row(row: &Row, col: &str) -> Option<serde_json::Value> {
+    row.get::<Option<String>, &str>(col)
+        .flatten()
+        .and_then(|s| serde_json::from_str(&s).ok())
+}
+
+/// JSON 值 → 参数（序列化为文本；None → NULL）
+pub(crate) fn json_val(v: Option<serde_json::Value>) -> Value {
+    v.and_then(|j| serde_json::to_string(&j).ok())
+        .map(Value::from)
+        .unwrap_or(Value::NULL)
+}
+
+/// Option → 参数（None → NULL）
+pub(crate) fn value_opt_str(v: Option<String>) -> Value {
+    v.map(Value::from).unwrap_or(Value::NULL)
+}
+
+pub(crate) fn value_opt_vec(v: Option<Vec<u8>>) -> Value {
+    v.map(Value::from).unwrap_or(Value::NULL)
+}
+
+pub(crate) fn value_opt_int<T: Into<Value>>(v: Option<T>) -> Value {
+    v.map(Into::into).unwrap_or(Value::NULL)
+}
+
+pub(crate) fn value_opt_dec(v: Option<Decimal>) -> Value {
+    v.map(|d| Value::from(d.to_string()))
+        .unwrap_or(Value::NULL)
 }
 
 impl Model for User {}
@@ -149,10 +186,10 @@ impl FromRow for User {
             openid: row.get("openid").flatten(),
             unionid: row.get("unionid").flatten(),
             token_version: row.get("token_version").unwrap_or_default(),
-            last_login_at: dt_opt(&row, "last_login_at"),
-            created_at: dt(&row, "created_at"),
-            updated_at: dt(&row, "updated_at"),
-            deleted_at: dt_opt(&row, "deleted_at"),
+            last_login_at: dt_opt_row(&row, "last_login_at"),
+            created_at: dt_row(&row, "created_at"),
+            updated_at: dt_row(&row, "updated_at"),
+            deleted_at: dt_opt_row(&row, "deleted_at"),
         })
     }
 }
@@ -172,8 +209,8 @@ impl FromRow for InsuranceProduct {
             operator_user_id: row.get("operator_user_id").flatten(),
             insurer_name: row.get("insurer_name").flatten(),
             currency: row.get("currency").unwrap_or_default(),
-            min_amount: dec_opt(&row, "min_amount"),
-            max_amount: dec_opt(&row, "max_amount"),
+            min_amount: dec_opt_row(&row, "min_amount"),
+            max_amount: dec_opt_row(&row, "max_amount"),
             min_term_months: row.get("min_term_months").flatten(),
             max_term_months: row.get("max_term_months").flatten(),
             waiting_period_days: row.get("waiting_period_days").flatten(),
@@ -181,9 +218,9 @@ impl FromRow for InsuranceProduct {
             cover_image_url: row.get("cover_image_url").flatten(),
             status: row.get("status").unwrap_or_default(),
             search_enabled: row.get("search_enabled").unwrap_or_default(),
-            created_at: dt(&row, "created_at"),
-            updated_at: dt(&row, "updated_at"),
-            deleted_at: dt_opt(&row, "deleted_at"),
+            created_at: dt_row(&row, "created_at"),
+            updated_at: dt_row(&row, "updated_at"),
+            deleted_at: dt_opt_row(&row, "deleted_at"),
         })
     }
 }

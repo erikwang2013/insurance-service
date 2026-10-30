@@ -2,14 +2,13 @@
 
 use async_trait::async_trait;
 use axum::http::StatusCode;
-use axum::response::Response;
 
 use bee_rust::bee_router::context::RouterError;
 use bee_rust::bee_router::{Context, Controller};
 
 use crate::services::payment_service::{CallbackReq, CreatePaymentReq, PaymentService};
 
-use super::{current_user_id, error_response, json_envelope, ok_response, read_json};
+use super::{current_user_id, error_response, json_envelope, ok_response, read_json, reply};
 
 /// 支付控制器（持有 PaymentService，按请求路径与方法分派动作）
 pub struct PaymentController {
@@ -24,11 +23,11 @@ impl PaymentController {
     async fn prepay(&self, ctx: &mut Context, channel: Option<&str>) -> Result<(), RouterError> {
         let order_id = match ctx.param("order_id").and_then(|s| s.parse::<i64>().ok()) {
             Some(id) => id,
-            None => return self.reply(ctx, json_envelope(40000, "缺少 order_id")).await,
+            None => return reply(ctx, json_envelope(40000, "缺少 order_id")).await,
         };
         let user_id = match current_user_id(ctx) {
             Ok(id) => id,
-            Err(resp) => return self.reply(ctx, resp).await,
+            Err(resp) => return reply(ctx, resp).await,
         };
         let req = CreatePaymentReq {
             order_id,
@@ -45,13 +44,13 @@ impl PaymentController {
         // 阶段 0：微信支付走 MockProvider（真实 WechatPayProvider 待阶段 4 接入）
         let mut req: CreatePaymentReq = match read_json(ctx).await {
             Ok(r) => r,
-            Err(resp) => return self.reply(ctx, resp).await,
+            Err(resp) => return reply(ctx, resp).await,
         };
         // 该端点固定微信渠道，不信请求体里的 channel
         req.channel = "WECHAT".to_string();
         let user_id = match current_user_id(ctx) {
             Ok(id) => id,
-            Err(resp) => return self.reply(ctx, resp).await,
+            Err(resp) => return reply(ctx, resp).await,
         };
         self.do_prepay(ctx, user_id, req).await
     }
@@ -66,16 +65,16 @@ impl PaymentController {
             Ok(p) => {
                 let data = serde_json::to_value(&p)
                     .map_err(|e| RouterError::SerializeError(e.to_string()))?;
-                self.reply(ctx, ok_response(data)).await
+                reply(ctx, ok_response(data)).await
             }
-            Err(e) => self.reply(ctx, error_response(&e)).await,
+            Err(e) => reply(ctx, error_response(&e)).await,
         }
     }
 
     async fn callback(&self, ctx: &mut Context) -> Result<(), RouterError> {
         let provider = match ctx.param("provider") {
             Some(p) => p.to_string(),
-            None => return self.reply(ctx, json_envelope(40000, "缺少 provider")).await,
+            None => return reply(ctx, json_envelope(40000, "缺少 provider")).await,
         };
         let token = ctx
             .request
@@ -85,27 +84,18 @@ impl PaymentController {
             .map(str::to_string);
         let req: CallbackReq = match read_json(ctx).await {
             Ok(r) => r,
-            Err(resp) => return self.reply(ctx, resp).await,
+            Err(resp) => return reply(ctx, resp).await,
         };
         match self.service.callback(&provider, token.as_deref(), req).await {
             Ok(p) => {
                 let data = serde_json::to_value(&p)
                     .map_err(|e| RouterError::SerializeError(e.to_string()))?;
-                self.reply(ctx, ok_response(data)).await
+                reply(ctx, ok_response(data)).await
             }
-            Err(e) => self.reply(ctx, error_response(&e)).await,
+            Err(e) => reply(ctx, error_response(&e)).await,
         }
     }
 
-    async fn reply(&self, ctx: &mut Context, resp: Response) -> Result<(), RouterError> {
-        let bytes = axum::body::to_bytes(resp.into_body(), 2 * 1024 * 1024)
-            .await
-            .map_err(|e| RouterError::Internal(e.to_string()))?;
-        let value: serde_json::Value = serde_json::from_slice(&bytes)
-            .map_err(|e| RouterError::SerializeError(e.to_string()))?;
-        ctx.json(&value)?;
-        Ok(())
-    }
 }
 
 #[async_trait]
