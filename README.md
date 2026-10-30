@@ -139,7 +139,7 @@ insurance-service/
 
 ### 配置
 
-配置通过环境变量注入，模板见 `.env.example`，默认值见 `config/app.toml`：
+配置通过环境变量注入，模板见 `.env.example`；`config/app.toml` 为字段对齐的示例（当前实现不解析 TOML），缺省值见代码：
 
 | 变量 | 说明 | 缺省 |
 |------|------|------|

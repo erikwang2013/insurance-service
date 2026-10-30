@@ -40,7 +40,7 @@ insurance-service/
 ├── src/
 │   ├── main.rs                 # 启动入口
 │   ├── lib.rs
-│   ├── config.rs               # AppConfig（环境变量 + app.toml）
+│   ├── config.rs               # AppConfig（环境变量；字段与 app.toml 对齐）
 │   ├── routes.rs               # build_bee_router()，41 业务端点 + /healthz + 中间件
 │   ├── db.rs                   # 连接池 / 查询 / with_tx
 │   ├── error.rs                # AppError
@@ -169,7 +169,7 @@ Trace（最外层）→ RateLimit → JWT 认证（RBAC）→ Controller
 ## 9. 搜索
 
 - `search_service.rs` 使用 MySQL `LIKE`，仅检索 `status = 'ON_SALE' AND search_enabled = 1` 的商品。
-- 关键字中的 LIKE 元字符 `\`、`%`、`_` 被转义，SQL 显式 `ESCAPE '\'`；参数全部绑定。
+- 关键字中的 LIKE 元字符 `\`、`%`、`_` 被转义，SQL 显式 `ESCAPE '\\'`；参数全部绑定。
 - 分页使用 `COUNT(*) OVER()`，空页时回退一次 `COUNT(*)`；查询参数经 `serde_urlencoded` 解码（支持百分号编码）。
 - `search/searchable_impl.rs` 仅提供搜索序列化辅助；开源版无 OpenSearch / rust_scout。
 
@@ -189,7 +189,7 @@ Trace（最外层）→ RateLimit → JWT 认证（RBAC）→ Controller
 | `IDGEN_WORKER_ID` | snowflake worker id（0-63） |
 | `RUST_LOG` | 日志级别 |
 
-`config/app.toml` 仅保留 server / database / jwt / crypto / payment / log 配置段。
+`config/app.toml` 为字段对齐模板（当前实现不解析 TOML）；实际配置全部来自环境变量，段名覆盖 server / database / jwt / crypto / payment / log。
 
 ## 11. 部署与测试
 
