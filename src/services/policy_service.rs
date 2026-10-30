@@ -339,7 +339,7 @@ impl PolicyService {
                     let audit_id = crate::utils::idgen::next_id();
                     tx.exec_drop(
                         "INSERT INTO audit_logs (id, user_id, action, entity_type, entity_id, \
-                         before_json, after_json) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                         before_json, after_json, trace_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                         vec![
                             audit_id.into(),
                             Value::from(user_id),
@@ -348,6 +348,7 @@ impl PolicyService {
                             Value::from(policy_id),
                             before,
                             after,
+                            Value::from(crate::middleware::trace::current_trace_id()),
                         ],
                     )
                     .await
@@ -409,12 +410,13 @@ impl PolicyService {
                 let audit_id = crate::utils::idgen::next_id();
                 tx.exec_drop(
                     "INSERT INTO audit_logs (id, user_id, action, entity_type, entity_id, \
-                     before_json, after_json) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                     before_json, after_json, trace_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                     vec![
                         audit_id.into(),
                         Value::from(user_id), Value::from(POLICY_ACTION_ENDORSE),
                         Value::from("POLICY"), Value::from(policy_id),
                         before, json_val(Some(bens_json(&new_rows))),
+                        Value::from(crate::middleware::trace::current_trace_id()),
                     ],
                 ).await.map_err(db_error)?;
                 Ok((old, new_rows))

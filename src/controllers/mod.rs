@@ -35,6 +35,7 @@ use bee_rust::bee_template::TemplateEngine;
 use crate::config::AppConfig;
 use crate::crypto::CryptoService;
 use crate::db::Db;
+use crate::middleware::auth::{AuthUser, JwtService, Role};
 use crate::middleware::rate_limit::RateLimiter;
 use crate::response::{ApiResponse, ResponseEnvelope};
 use crate::services::auth_service::auth_service;
@@ -65,6 +66,10 @@ pub struct AppState {
     pub cache: Arc<dyn Cache>,
     pub templates: Arc<TemplateEngine>,
     pub ttl: Duration,
+    /// 数据库连接池（鉴权中间件按 users 表加载身份）
+    pub db: Db,
+    /// JWT 签发/校验（鉴权中间件使用）
+    pub jwt: JwtService,
     /// 限流器（路由层挂载，宽松默认防滥用）
     pub rate_limiter: RateLimiter,
     pub admin: Arc<AdminController>,
@@ -92,6 +97,7 @@ impl AppState {
         let crypto = CryptoService::from_master_key_b64(&cfg.crypto.master_key)
             .map_err(|e| format!("加密主密钥无效: {e}"))?;
         let db = Db::new(&cfg.database).map_err(|e| format!("数据库连接池初始化失败: {e}"))?;
+        let jwt = JwtService::new(cfg.jwt.clone());
         let admin = Arc::new(AdminController::new(db.clone()));
         let auth = Arc::new(AuthController::new(auth_service(
             cfg.jwt.clone(),
@@ -106,14 +112,16 @@ impl AppState {
         let order = Arc::new(OrderController::new(OrderService::new(db.clone())));
         let payment = Arc::new(PaymentController::new(PaymentService::new(db.clone())));
         let policy = Arc::new(PolicyController::new(PolicyService::new(db.clone())));
-        let contract = Arc::new(ContractController::new(ContractService::new(db)));
-        // 限流默认：单 key（X-Forwarded-For，回退全局）60 秒 300 次，宽松防滥用；
+        let contract = Arc::new(ContractController::new(ContractService::new(db.clone())));
+        // 限流默认：按对端 socket IP（ConnectInfo，缺失回退 unknown）60 秒 300 次，宽松防滥用；
         // 登录等敏感端点后续可单独收紧（按 key 维度隔离计数）
         let rate_limiter = RateLimiter::new(300, 60);
         Ok(Self {
             cache,
             templates,
             ttl: SESSION_TTL,
+            db,
+            jwt,
             rate_limiter,
             admin,
             auth,
@@ -201,6 +209,25 @@ pub(crate) fn error_response(e: &crate::error::AppError) -> Response {
 /// 序列化成功数据 → 信封响应（失败视为内部错误）
 pub(crate) fn ok_response(data: serde_json::Value) -> Response {
     axum::Json(ResponseEnvelope::ok(data)).into_response()
+}
+
+/// 当前认证用户 id：由 `auth_mw` 注入的 `AuthUser` 决定，绝不信客户端入参。
+pub(crate) fn current_user_id(ctx: &Context) -> Result<i64, Response> {
+    ctx.request
+        .extensions()
+        .get::<AuthUser>()
+        .map(|u| u.id)
+        .ok_or_else(|| json_envelope(40100, "未认证"))
+}
+
+/// 当前认证用户角色（由库中 users.role 解析，Task 3+ 的角色判定使用）。
+#[allow(dead_code)] // Task 3 起由业务控制器使用
+pub(crate) fn current_role(ctx: &Context) -> Result<Role, Response> {
+    ctx.request
+        .extensions()
+        .get::<AuthUser>()
+        .map(|u| u.role)
+        .ok_or_else(|| json_envelope(40100, "未认证"))
 }
 
 // ---------------------------------------------------------------------------

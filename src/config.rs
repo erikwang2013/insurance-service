@@ -53,6 +53,14 @@ pub struct WechatConfig {
     pub app_secret: String,
 }
 
+/// 支付回调配置
+///
+/// `callback_token` 为空表示回调通道未启用（服务端拒绝回调请求）。
+#[derive(Debug, Clone, Deserialize)]
+pub struct PaymentConfig {
+    pub callback_token: String,
+}
+
 /// 应用总配置
 #[derive(Debug, Clone, Deserialize)]
 pub struct AppConfig {
@@ -62,6 +70,7 @@ pub struct AppConfig {
     pub crypto: CryptoConfig,
     pub log: LogConfig,
     pub wechat: WechatConfig,
+    pub payment: PaymentConfig,
 }
 
 /// 从环境变量读取配置（手写实现，替代 bee_config）
@@ -78,8 +87,16 @@ impl AppConfig {
         let database = DbConfig {
             url: env_required("DATABASE_URL")?,
         };
+        // JWT 密钥必须显式提供且足够长：弱默认值会让任何人伪造令牌
+        let secret = env_required("JWT_SECRET")?;
+        if secret.len() < 32 {
+            return Err(format!(
+                "JWT_SECRET 长度不足 32 字节（当前 {} 字节），请配置足够长的随机密钥",
+                secret.len()
+            ));
+        }
         let jwt = JwtConfig {
-            secret: env_or("JWT_SECRET", "change-me-to-a-long-random-string"),
+            secret,
             issuer: env_or("JWT_ISSUER", "insurance-service"),
             access_expiry: env_or("JWT_ACCESS_EXPIRY", "7200")
                 .parse()
@@ -98,6 +115,9 @@ impl AppConfig {
             app_id: env_or("WECHAT_APPID", ""),
             app_secret: env_or("WECHAT_SECRET", ""),
         };
+        let payment = PaymentConfig {
+            callback_token: env_or("PAYMENT_CALLBACK_TOKEN", ""),
+        };
         Ok(AppConfig {
             server,
             database,
@@ -105,6 +125,7 @@ impl AppConfig {
             crypto,
             log,
             wechat,
+            payment,
         })
     }
 
@@ -120,4 +141,48 @@ fn env_required(key: &str) -> Result<String, String> {
 
 fn env_or(key: &str, default: &str) -> String {
     std::env::var(key).unwrap_or_else(|_| default.to_string())
+}
+
+/// 日志用 DSN：把 `://` 与 `@` 之间的 `user:password` 替换为 `***`。
+///
+/// 无凭据段或非标准 DSN 原样返回（不猜测、不丢信息）。
+pub fn redact_db_url(url: &str) -> String {
+    let Some((scheme, rest)) = url.split_once("://") else {
+        return url.to_string();
+    };
+    let Some((_credentials, host)) = rest.rsplit_once('@') else {
+        return url.to_string();
+    };
+    format!("{scheme}://***@{host}")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::redact_db_url;
+
+    #[test]
+    fn redacts_credentials_in_db_url() {
+        assert_eq!(
+            redact_db_url("mysql://alice:s3cret@db.local:3306/insurance"),
+            "mysql://***@db.local:3306/insurance"
+        );
+        // 密码自身含 @ 时以最后一个 @ 为分界
+        assert_eq!(
+            redact_db_url("mysql://alice:p@ss@db.local/insurance"),
+            "mysql://***@db.local/insurance"
+        );
+        assert_eq!(
+            redact_db_url("mysql://alice@db.local/insurance"),
+            "mysql://***@db.local/insurance"
+        );
+    }
+
+    #[test]
+    fn leaves_urls_without_credentials_unchanged() {
+        assert_eq!(
+            redact_db_url("mysql://db.local:3306/insurance"),
+            "mysql://db.local:3306/insurance"
+        );
+        assert_eq!(redact_db_url("not-a-url"), "not-a-url");
+    }
 }

@@ -12,7 +12,7 @@ use crate::services::auth_service::{
     WechatLoginReq,
 };
 
-use super::{error_response, json_envelope, ok_response, query_map, read_json};
+use super::{current_user_id, error_response, ok_response, read_json};
 
 /// 认证控制器（持有 AuthService，按请求路径分派动作）
 pub struct AuthController {
@@ -85,11 +85,9 @@ impl AuthController {
     }
 
     async fn logout(&self, ctx: &mut Context) -> Result<(), RouterError> {
-        // user_id 经 query 显式传入（同 me()/change_password()/bind_phone() 约定）
-        let q = query_map(ctx.request.uri().query());
-        let user_id: i64 = match q.get("user_id").and_then(|s| s.parse().ok()) {
-            Some(id) => id,
-            None => return self.reply(ctx, json_envelope(40000, "缺少 user_id")).await,
+        let user_id = match current_user_id(ctx) {
+            Ok(id) => id,
+            Err(resp) => return self.reply(ctx, resp).await,
         };
         match self.service.logout(user_id).await {
             // token_version +1：此前签发的 refresh 全部失效（无状态 JWT 撤销闭环）
@@ -100,12 +98,11 @@ impl AuthController {
         }
     }
 
-    /// 微信绑定（POST /auth/wechat/bind，user_id 经 query 显式传入，同 user/* 约定）
+    /// 微信绑定（POST /auth/wechat/bind，身份取自已认证会话）
     async fn bind_wechat(&self, ctx: &mut Context) -> Result<(), RouterError> {
-        let q = query_map(ctx.request.uri().query());
-        let user_id: i64 = match q.get("user_id").and_then(|s| s.parse().ok()) {
-            Some(id) => id,
-            None => return self.reply(ctx, json_envelope(40000, "缺少 user_id")).await,
+        let user_id = match current_user_id(ctx) {
+            Ok(id) => id,
+            Err(resp) => return self.reply(ctx, resp).await,
         };
         // 请求体与微信登录一致：{ "code": "<wx.login 返回的 code>" }
         let req: WechatLoginReq = match read_json(ctx).await {
@@ -120,12 +117,11 @@ impl AuthController {
         }
     }
 
-    /// 修改密码（POST /user/password，user_id 经 query 显式传入，同 me()）
+    /// 修改密码（POST /user/password，身份取自已认证会话）
     async fn change_password(&self, ctx: &mut Context) -> Result<(), RouterError> {
-        let q = query_map(ctx.request.uri().query());
-        let user_id: i64 = match q.get("user_id").and_then(|s| s.parse().ok()) {
-            Some(id) => id,
-            None => return self.reply(ctx, json_envelope(40000, "缺少 user_id")).await,
+        let user_id = match current_user_id(ctx) {
+            Ok(id) => id,
+            Err(resp) => return self.reply(ctx, resp).await,
         };
         let req: ChangePasswordReq = match read_json(ctx).await {
             Ok(r) => r,
@@ -143,12 +139,11 @@ impl AuthController {
         }
     }
 
-    /// 换绑手机（POST /user/phone，user_id 经 query 显式传入，同 me()）
+    /// 换绑手机（POST /user/phone，身份取自已认证会话）
     async fn bind_phone(&self, ctx: &mut Context) -> Result<(), RouterError> {
-        let q = query_map(ctx.request.uri().query());
-        let user_id: i64 = match q.get("user_id").and_then(|s| s.parse().ok()) {
-            Some(id) => id,
-            None => return self.reply(ctx, json_envelope(40000, "缺少 user_id")).await,
+        let user_id = match current_user_id(ctx) {
+            Ok(id) => id,
+            Err(resp) => return self.reply(ctx, resp).await,
         };
         let req: BindPhoneReq = match read_json(ctx).await {
             Ok(r) => r,
@@ -166,12 +161,11 @@ impl AuthController {
         }
     }
 
-    /// 当前用户资料（GET /user/me，user_id 经 query 显式传入，见 claim.rs my_claims）
+    /// 当前用户资料（GET /user/me，身份取自已认证会话）
     async fn me(&self, ctx: &mut Context) -> Result<(), RouterError> {
-        let q = query_map(ctx.request.uri().query());
-        let user_id: i64 = match q.get("user_id").and_then(|s| s.parse().ok()) {
-            Some(id) => id,
-            None => return self.reply(ctx, json_envelope(40000, "缺少 user_id")).await,
+        let user_id = match current_user_id(ctx) {
+            Ok(id) => id,
+            Err(resp) => return self.reply(ctx, resp).await,
         };
         match self.service.me(user_id).await {
             Ok(u) => {

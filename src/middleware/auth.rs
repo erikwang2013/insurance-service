@@ -61,6 +61,10 @@ pub struct Claims {
     /// serde 缺省为 0，与库中默认 0 一致，兼容既有会话。
     #[serde(default)]
     pub token_version: i64,
+    /// 令牌类型（"access" | "refresh"）：禁止两种令牌互换使用。
+    /// 缺省空串供旧令牌反序列化（随后被 verify_access/verify_refresh 拒绝）。
+    #[serde(default)]
+    pub typ: String,
 }
 
 /// 认证通过后注入上下文的当前用户
@@ -71,7 +75,12 @@ pub struct AuthUser {
     pub platform: Option<String>,
 }
 
+/// Claims.typ 取值：access / refresh 不可互换
+const TYP_ACCESS: &str = "access";
+const TYP_REFRESH: &str = "refresh";
+
 /// 签发/校验 token 的服务（封装 jsonwebtoken）
+#[derive(Clone)]
 pub struct JwtService {
     cfg: JwtConfig,
 }
@@ -81,6 +90,11 @@ impl JwtService {
         Self { cfg }
     }
 
+    /// access token 有效期（秒），供登录响应的 `expires_in` 使用
+    pub fn access_expiry(&self) -> i64 {
+        self.cfg.access_expiry
+    }
+
     /// 签发 access token（token_version 固定 0；兼容入口，供测试/骨架路径使用）
     pub fn issue_access_token(
         &self,
@@ -88,10 +102,46 @@ impl JwtService {
         role: Role,
         platform: Option<String>,
     ) -> Result<String, crate::error::AppError> {
-        self.issue_token_with_version(user_id, role, platform, 0)
+        self.issue_access_token_with_version(user_id, role, platform, 0)
     }
 
-    /// 签发带令牌版本的 JWT（version 由调用方取自 users.token_version）
+    /// 签发带令牌版本的 access JWT（version 由调用方取自 users.token_version）
+    pub fn issue_access_token_with_version(
+        &self,
+        user_id: i64,
+        role: Role,
+        platform: Option<String>,
+        token_version: i64,
+    ) -> Result<String, crate::error::AppError> {
+        self.issue(
+            user_id,
+            role,
+            platform,
+            token_version,
+            TYP_ACCESS,
+            self.cfg.access_expiry,
+        )
+    }
+
+    /// 签发带令牌版本的 refresh JWT（独立 typ + 长时效）
+    pub fn issue_refresh_token_with_version(
+        &self,
+        user_id: i64,
+        role: Role,
+        platform: Option<String>,
+        token_version: i64,
+    ) -> Result<String, crate::error::AppError> {
+        self.issue(
+            user_id,
+            role,
+            platform,
+            token_version,
+            TYP_REFRESH,
+            self.cfg.refresh_expiry,
+        )
+    }
+
+    /// 兼容入口：等同 access token
     pub fn issue_token_with_version(
         &self,
         user_id: i64,
@@ -99,15 +149,28 @@ impl JwtService {
         platform: Option<String>,
         token_version: i64,
     ) -> Result<String, crate::error::AppError> {
+        self.issue_access_token_with_version(user_id, role, platform, token_version)
+    }
+
+    fn issue(
+        &self,
+        user_id: i64,
+        role: Role,
+        platform: Option<String>,
+        token_version: i64,
+        typ: &str,
+        expiry: i64,
+    ) -> Result<String, crate::error::AppError> {
         let now = chrono::Utc::now().timestamp();
         let claims = Claims {
             sub: user_id,
             role: role.as_str().to_string(),
             platform,
             iat: now,
-            exp: now + self.cfg.access_expiry,
+            exp: now + expiry,
             iss: self.cfg.issuer.clone(),
             token_version,
+            typ: typ.to_string(),
         };
         let header = jsonwebtoken::Header::new(jsonwebtoken::Algorithm::HS256);
         jsonwebtoken::encode(
@@ -118,7 +181,8 @@ impl JwtService {
         .map_err(|e| crate::error::AppError::Internal(Box::new(e)))
     }
 
-    /// 校验并解析 token
+    /// 校验签名/issuer/exp（leeway 0），不做 typ 检查。
+    /// 保留为公开入口：旧 `AuthFilter` 在 Task 6 移除前仍使用。
     pub fn verify_token(&self, token: &str) -> Result<Claims, crate::error::AppError> {
         let mut validation = jsonwebtoken::Validation::new(jsonwebtoken::Algorithm::HS256);
         // jsonwebtoken 默认 exp/nbf 有 60s 宽容窗口；这里按签发语义精确执行过期
@@ -131,6 +195,28 @@ impl JwtService {
         )
         .map_err(|_| crate::error::AppError::Unauthorized)?;
         Ok(data.claims)
+    }
+
+    /// 校验 access token（签名/issuer/exp + typ == "access"）
+    pub fn verify_access(&self, token: &str) -> Result<Claims, crate::error::AppError> {
+        self.verify_typed(token, TYP_ACCESS)
+    }
+
+    /// 校验 refresh token（签名/issuer/exp + typ == "refresh"）
+    pub fn verify_refresh(&self, token: &str) -> Result<Claims, crate::error::AppError> {
+        self.verify_typed(token, TYP_REFRESH)
+    }
+
+    fn verify_typed(
+        &self,
+        token: &str,
+        expected: &str,
+    ) -> Result<Claims, crate::error::AppError> {
+        let claims = self.verify_token(token)?;
+        if claims.typ != expected {
+            return Err(crate::error::AppError::Unauthorized);
+        }
+        Ok(claims)
     }
 }
 
@@ -209,5 +295,44 @@ impl Filter for RequireRoleFilter {
         } else {
             Err(crate::error::AppError::Forbidden.to_string())
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn jwt_service() -> JwtService {
+        JwtService::new(JwtConfig {
+            // 新配置规则要求 >= 32 字节
+            secret: "0123456789abcdef0123456789abcdef".into(),
+            issuer: "insurance-test".into(),
+            access_expiry: 100,
+            refresh_expiry: 1000,
+        })
+    }
+
+    #[test]
+    fn access_and_refresh_tokens_are_typed_and_distinct() {
+        let jwt = jwt_service();
+        let access = jwt
+            .issue_access_token_with_version(7, Role::Agent, Some("flutter".into()), 3)
+            .unwrap();
+        let refresh = jwt
+            .issue_refresh_token_with_version(7, Role::Agent, Some("flutter".into()), 3)
+            .unwrap();
+        assert_ne!(access, refresh, "access 与 refresh 必须不同");
+
+        let a = jwt.verify_access(&access).unwrap();
+        assert_eq!(a.typ, "access");
+        assert_eq!(a.sub, 7);
+        assert_eq!(a.token_version, 3);
+        assert_eq!(a.exp - a.iat, jwt.access_expiry());
+        assert!(jwt.verify_refresh(&access).is_err(), "access 不可当 refresh 用");
+
+        let r = jwt.verify_refresh(&refresh).unwrap();
+        assert_eq!(r.typ, "refresh");
+        assert_eq!(r.exp - r.iat, 1000);
+        assert!(jwt.verify_access(&refresh).is_err(), "refresh 不可当 access 用");
     }
 }

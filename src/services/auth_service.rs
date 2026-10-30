@@ -218,8 +218,10 @@ impl AuthService {
             .await?;
         let user = user.ok_or_else(|| AppError::business("用户名或密码错误"))?;
 
-        // 2. 校验密码
-        if !Self::verify_password(&req.password, &user.password_hash) {
+        // 2. 校验密码；禁用/冻结账号返回同一泛化错误，避免账号状态枚举
+        if !Self::verify_password(&req.password, &user.password_hash)
+            || user.status != User::STATUS_ACTIVE
+        {
             return Err(AppError::business("用户名或密码错误"));
         }
 
@@ -253,6 +255,9 @@ impl AuthService {
         let user = user.ok_or_else(|| {
             AppError::business("该微信未绑定账号，请先登录后在个人中心绑定")
         })?;
+        if user.status != User::STATUS_ACTIVE {
+            return Err(AppError::business("账号已禁用或冻结"));
+        }
         let role = Role::parse(&user.role).unwrap_or(Role::User);
         self.issue_tokens(user.id, &user.username, role, user.token_version)
     }
@@ -314,13 +319,13 @@ impl AuthService {
         Ok(())
     }
 
-    /// 令牌刷新：校验 refresh_token（与 access 同型 JWT，签名/过期/issuer 由
-    /// `JwtService::verify_token` 把关，失败 → Unauthorized）→ 按载荷 `sub`
+    /// 令牌刷新：校验 refresh_token（签名/过期/issuer/typ 由
+    /// `JwtService::verify_refresh` 把关，失败 → Unauthorized）→ 按载荷 `sub`
     /// 查用户，须存在、未删除、status='ACTIVE' **且载荷 token_version 与库中一致**
     /// （不一致 = 该令牌签发后发生过 logout/改密/换绑手机 → 已撤销）→
     /// 按库中最新的 username/role/token_version 重签双令牌。
     pub async fn refresh(&self, refresh_token: &str) -> Result<LoginResult> {
-        let claims = self.jwt.verify_token(refresh_token)?;
+        let claims = self.jwt.verify_refresh(refresh_token)?;
         let user: Option<User> = self
             .db
             .query_one(
@@ -436,17 +441,17 @@ impl AuthService {
     ) -> Result<LoginResult> {
         let access_token =
             self.jwt
-                .issue_token_with_version(user_id, role, None, token_version)?;
-        // Refresh Token：长时效，阶段 0 直接复用 JWT 载荷（refresh 校验放 Redis 后实现）
+                .issue_access_token_with_version(user_id, role, None, token_version)?;
+        // Refresh Token：独立 typ + 长时效，只能用于 /auth/refresh
         let refresh_token =
             self.jwt
-                .issue_token_with_version(user_id, role, None, token_version)?;
+                .issue_refresh_token_with_version(user_id, role, None, token_version)?;
         Ok(LoginResult {
             tokens: TokenPair {
                 access_token,
                 refresh_token,
                 token_type: "Bearer".into(),
-                expires_in: 7200,
+                expires_in: self.jwt.access_expiry(),
             },
             user_id,
             username: username.to_string(),

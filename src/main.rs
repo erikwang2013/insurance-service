@@ -5,9 +5,11 @@
 //! 说明：bee-rust 已通过本地 path 依赖激活（见 Cargo.toml [workspace.dependencies]
 //! 注释），此处直接启动真实 HTTP 服务；业务过滤器链与控制器随阶段 1 接入。
 
+use std::net::SocketAddr;
+
 use tracing::{error, info};
 
-use insurance_service::config::AppConfig;
+use insurance_service::config::{redact_db_url, AppConfig};
 use insurance_service::controllers::AppState;
 use insurance_service::routes;
 
@@ -31,7 +33,11 @@ async fn main() {
             std::process::exit(1);
         }
     };
-    info!(addr = %cfg.bind_addr(), db = %cfg.database.url, "配置加载完成");
+    info!(
+        addr = %cfg.bind_addr(),
+        db = %redact_db_url(&cfg.database.url),
+        "配置加载完成"
+    );
 
     // 3. 装配控制器状态（阶段 1：模板引擎 / 会话缓存 / 业务 Controller）
     let state = match AppState::new(&cfg) {
@@ -53,7 +59,9 @@ async fn main() {
             std::process::exit(1);
         }
     };
-    if let Err(e) = axum::serve(listener, app).await {
+    // 注入对端地址（ConnectInfo），限流中间件据此按 IP 计数
+    let service = app.into_make_service_with_connect_info::<SocketAddr>();
+    if let Err(e) = axum::serve(listener, service).await {
         error!("服务异常退出: {e}");
         std::process::exit(1);
     }

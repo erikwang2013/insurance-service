@@ -20,8 +20,11 @@ struct Window {
 
 /// 固定窗口限流器：按 key 独立计数，跨窗口自动重置。
 ///
+/// 内存边界：key 数量达到 10_000 时清理过期窗口；清理后仍 ≥ 100_000 时
+/// 直接拒绝（fail closed），避免 key 泛滥拖垮内存。
+///
 /// # ponytail: 全局单锁 Mutex<HashMap>，按 key 粒度加锁/分片可提升并发吞吐；
-/// 窗口记录只增不减，若 key 基数大且长期活跃，需定期清理过期窗口，当前场景（IP/用户维度）规模可忽略。
+/// 当前场景（IP 维度）规模可忽略，需要更高吞吐时再分片。
 #[derive(Clone)]
 pub struct RateLimiter {
     max_requests: u64,
@@ -40,10 +43,18 @@ impl RateLimiter {
     }
 
     /// 核心判定（时钟可注入，便于测试）：
+    /// - key 数量达上限阈值时先清理过期窗口；仍达硬上限 → fail closed
     /// - 距窗口起点已 ≥ window_secs → 视为新窗口，重置计数
     /// - 同窗口内计数 ≥ max_requests → 拒绝（false），否则计数 +1 放行（true）
     pub fn check_at(&self, key: &str, now_secs: u64) -> bool {
         let mut windows = self.windows.lock().unwrap_or_else(|poison| poison.into_inner());
+        if windows.len() >= 10_000 {
+            let window_secs = self.window_secs;
+            windows.retain(|_, w| now_secs.saturating_sub(w.start_secs) < window_secs);
+            if windows.len() >= 100_000 {
+                return false;
+            }
+        }
         let entry = windows
             .entry(key.to_string())
             .or_insert(Window { count: 0, start_secs: now_secs });
@@ -119,5 +130,38 @@ mod tests {
         assert!(!rl.check_at("k", 9), "窗口内第 2 次拒绝");
         assert!(rl.check_at("k", 10), "t=10 恰为新窗口 [10, 20)");
         assert!(!rl.check_at("k", 19), "仍处 [10, 20)，拒绝");
+    }
+
+    /// 达到 10_000 阈值时清理过期窗口：过期 key 被移除，活跃 key 保留
+    #[test]
+    fn cleans_expired_windows_at_threshold() {
+        let rl = RateLimiter::new(1, 10);
+        {
+            let mut windows = rl.windows.lock().unwrap();
+            for i in 0..5_000 {
+                windows.insert(format!("old-{i}"), Window { count: 1, start_secs: 0 });
+            }
+            for i in 0..5_000 {
+                windows.insert(format!("new-{i}"), Window { count: 1, start_secs: 100 });
+            }
+        }
+        // t=100 触发清理：old-* 已过期（100-0 >= 10），new-* 仍在窗口内
+        assert!(rl.check_at("fresh", 100));
+        let len = rl.windows.lock().unwrap().len();
+        assert_eq!(len, 5_001, "过期窗口被清理，仅活跃 + 新 key 保留");
+    }
+
+    /// 硬上限：清理后仍 ≥ 100_000 个活跃 key → fail closed，不再增长
+    #[test]
+    fn fails_closed_at_hard_cap() {
+        let rl = RateLimiter::new(1, 10);
+        {
+            let mut windows = rl.windows.lock().unwrap();
+            for i in 0..100_000 {
+                windows.insert(format!("k-{i}"), Window { count: 1, start_secs: 100 });
+            }
+        }
+        assert!(!rl.check_at("another", 100), "满额且无过期窗口时应拒绝");
+        assert_eq!(rl.windows.lock().unwrap().len(), 100_000, "拒绝时不写入新 key");
     }
 }
