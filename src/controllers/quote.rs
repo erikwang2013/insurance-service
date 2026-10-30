@@ -9,7 +9,7 @@ use bee_rust::bee_router::{Context, Controller};
 
 use crate::services::quote_service::{QuoteService, CreateQuoteReq};
 
-use super::{error_response, json_envelope, ok_response, read_json};
+use super::{current_user_id, error_response, json_envelope, ok_response, read_json};
 
 /// 报价控制器（持有 QuoteService，按请求路径分派动作）
 pub struct QuoteController {
@@ -22,11 +22,15 @@ impl QuoteController {
     }
 
     async fn create(&self, ctx: &mut Context) -> Result<(), RouterError> {
+        let user_id = match current_user_id(ctx) {
+            Ok(id) => id,
+            Err(resp) => return self.reply(ctx, resp).await,
+        };
         let req: CreateQuoteReq = match read_json(ctx).await {
             Ok(r) => r,
             Err(resp) => return self.reply(ctx, resp).await,
         };
-        match self.service.create(req).await {
+        match self.service.create(user_id, req).await {
             Ok(q) => {
                 let data = serde_json::to_value(&q)
                     .map_err(|e| RouterError::SerializeError(e.to_string()))?;
@@ -41,7 +45,11 @@ impl QuoteController {
             Some(id) => id,
             None => return self.reply(ctx, json_envelope(40000, "报价 id 参数无效")).await,
         };
-        match self.service.by_id(id).await {
+        let user_id = match current_user_id(ctx) {
+            Ok(id) => id,
+            Err(resp) => return self.reply(ctx, resp).await,
+        };
+        match self.service.by_id(id, user_id).await {
             Ok(q) => {
                 let data = serde_json::to_value(&q)
                     .map_err(|e| RouterError::SerializeError(e.to_string()))?;

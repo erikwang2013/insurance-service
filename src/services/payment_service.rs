@@ -18,7 +18,6 @@ use crate::models::payment::Payment;
 #[derive(Debug, Deserialize)]
 pub struct CreatePaymentReq {
     pub order_id: i64,
-    pub user_id: i64,
     #[serde(default)]
     pub channel: String,
 }
@@ -44,7 +43,8 @@ impl PaymentService {
         format!("PAY{}{:04x}", Utc::now().timestamp_millis(), Uuid::new_v4().as_u128() as u64 & 0xFFFF)
     }
 
-    pub async fn prepay(&self, req: CreatePaymentReq) -> Result<Payment> {
+    /// `user_id` 取自已认证身份（控制器从 token 取），不信请求体。
+    pub async fn prepay(&self, user_id: i64, req: CreatePaymentReq) -> Result<Payment> {
         let payment_no = Self::payment_no();
         let channel = if req.channel.is_empty() {
             Payment::CHANNEL_MOCK.to_string()
@@ -59,7 +59,7 @@ impl PaymentService {
                     let order: Option<Row> = tx
                         .exec_first(
                             "SELECT id, payable_amount, currency, status FROM orders WHERE id = ? AND user_id = ? AND deleted_at IS NULL LIMIT 1",
-                            vec![req.order_id, req.user_id],
+                            vec![req.order_id, user_id],
                         )
                         .await
                         .map_err(db_error)?;
@@ -84,7 +84,7 @@ impl PaymentService {
                             pid.into(),
                             Value::from(&payment_no),
                             Value::from(req.order_id),
-                            Value::from(req.user_id),
+                            Value::from(user_id),
                             Value::from(amount.to_string()),
                             Value::from(&currency),
                             Value::from(&channel),

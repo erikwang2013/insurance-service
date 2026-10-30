@@ -19,7 +19,6 @@ use crate::models::order::Order;
 #[derive(Debug, Deserialize)]
 pub struct CreateOrderReq {
     pub quote_id: i64,
-    pub user_id: i64,
     /// 订单备注
     pub remark: Option<String>,
     /// 优惠金额（可选，默认为 0）
@@ -44,7 +43,8 @@ impl OrderService {
     }
 
     /// 事务内创建订单：校验 quote 存在且属于该用户 → INSERT orders → 回读。
-    pub async fn create(&self, req: CreateOrderReq) -> Result<Order> {
+    /// `user_id` 取自已认证身份（控制器从 token 取），不信请求体。
+    pub async fn create(&self, user_id: i64, req: CreateOrderReq) -> Result<Order> {
         let order_no = Self::generate_order_no();
         let now = Utc::now();
 
@@ -59,7 +59,7 @@ impl OrderService {
                     let q: Option<mysql_async::Row> = tx
                         .exec_first(
                             "SELECT * FROM quotes WHERE id = ? AND user_id = ? AND status = 'PENDING' LIMIT 1",
-                            vec![req.quote_id, req.user_id],
+                            vec![req.quote_id, user_id],
                         )
                         .await
                         .map_err(db_error)?;
@@ -99,7 +99,7 @@ impl OrderService {
                         oid.into(),
                         Value::from(&order_no),
                         Value::from(req.quote_id),
-                        Value::from(req.user_id),
+                        Value::from(user_id),
                         Value::from(product_id),
                         Value::from(&product_name),
                         Value::from(&holder_name),
@@ -141,13 +141,16 @@ impl OrderService {
         quote.map(|r| row_to_order(&r)).transpose()?.ok_or_else(|| AppError::business("订单创建后回读失败"))
     }
 
-    /// 按 id 查订单
-    pub async fn by_id(&self, id: i64) -> Result<Order> {
+    /// 按 id 且归属 `user_id` 查订单
+    pub async fn by_id(&self, id: i64, user_id: i64) -> Result<Order> {
         let row: Option<mysql_async::Row> = self
             .db
             .conn()
             .await?
-            .exec_first("SELECT * FROM orders WHERE id = ? AND deleted_at IS NULL LIMIT 1", vec![id])
+            .exec_first(
+                "SELECT * FROM orders WHERE id = ? AND user_id = ? AND deleted_at IS NULL LIMIT 1",
+                vec![id, user_id],
+            )
             .await
             .map_err(db_error)?;
         row.map(|r| row_to_order(&r)).transpose()?

@@ -9,7 +9,7 @@ use bee_rust::bee_router::{Context, Controller};
 
 use crate::services::payment_service::{CallbackReq, CreatePaymentReq, PaymentService};
 
-use super::{error_response, json_envelope, ok_response, read_json};
+use super::{current_user_id, error_response, json_envelope, ok_response, read_json};
 
 /// 支付控制器（持有 PaymentService，按请求路径与方法分派动作）
 pub struct PaymentController {
@@ -26,23 +26,15 @@ impl PaymentController {
             Some(id) => id,
             None => return self.reply(ctx, json_envelope(40000, "缺少 order_id")).await,
         };
-        let user_id = match ctx.param("user_id").and_then(|s| s.parse::<i64>().ok()) {
-            Some(id) => id,
-            None => return self.reply(ctx, json_envelope(40000, "缺少 user_id")).await,
+        let user_id = match current_user_id(ctx) {
+            Ok(id) => id,
+            Err(resp) => return self.reply(ctx, resp).await,
         };
         let req = CreatePaymentReq {
             order_id,
-            user_id,
             channel: channel.unwrap_or_default().to_string(),
         };
-        match self.service.prepay(req).await {
-            Ok(p) => {
-                let data = serde_json::to_value(&p)
-                    .map_err(|e| RouterError::SerializeError(e.to_string()))?;
-                self.reply(ctx, ok_response(data)).await
-            }
-            Err(e) => self.reply(ctx, error_response(&e)).await,
-        }
+        self.do_prepay(ctx, user_id, req).await
     }
 
     async fn pay(&self, ctx: &mut Context) -> Result<(), RouterError> {
@@ -51,7 +43,34 @@ impl PaymentController {
 
     async fn wechat_prepay(&self, ctx: &mut Context) -> Result<(), RouterError> {
         // 阶段 0：微信支付走 MockProvider（真实 WechatPayProvider 待阶段 4 接入）
-        self.prepay(ctx, Some("WECHAT")).await
+        let mut req: CreatePaymentReq = match read_json(ctx).await {
+            Ok(r) => r,
+            Err(resp) => return self.reply(ctx, resp).await,
+        };
+        if req.channel.is_empty() {
+            req.channel = "WECHAT".to_string();
+        }
+        let user_id = match current_user_id(ctx) {
+            Ok(id) => id,
+            Err(resp) => return self.reply(ctx, resp).await,
+        };
+        self.do_prepay(ctx, user_id, req).await
+    }
+
+    async fn do_prepay(
+        &self,
+        ctx: &mut Context,
+        user_id: i64,
+        req: CreatePaymentReq,
+    ) -> Result<(), RouterError> {
+        match self.service.prepay(user_id, req).await {
+            Ok(p) => {
+                let data = serde_json::to_value(&p)
+                    .map_err(|e| RouterError::SerializeError(e.to_string()))?;
+                self.reply(ctx, ok_response(data)).await
+            }
+            Err(e) => self.reply(ctx, error_response(&e)).await,
+        }
     }
 
     async fn callback(&self, ctx: &mut Context) -> Result<(), RouterError> {

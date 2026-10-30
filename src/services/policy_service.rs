@@ -24,15 +24,10 @@ const ISSUE_TYPE_RENEW: &str = "RENEW";
 const POLICY_ACTION_LAPSE: &str = "POLICY_LAPSE";
 const POLICY_ACTION_ENDORSE: &str = "POLICY_ENDORSE";
 
+/// 签发请求体：报价取订单行自身的 quote_id，身份取 token，均不信请求体。
 #[derive(Debug, Deserialize)]
 pub struct IssuePolicyReq {
     pub order_id: i64,
-    pub quote_id: i64,
-    pub user_id: i64,
-    #[serde(default)]
-    pub issue_type: String,
-    #[serde(default)]
-    pub is_renewable: bool,
 }
 
 pub struct PolicyService {
@@ -48,9 +43,10 @@ impl PolicyService {
         format!("POL{}{:04x}", Utc::now().timestamp_millis(), Uuid::new_v4().as_u128() as u64 & 0xFFFF)
     }
 
-    pub async fn issue(&self, req: IssuePolicyReq) -> Result<Policy> {
+    /// 签发保单：订单归属本人且已支付 → 按订单自身的 quote_id 取报价 → 落库。
+    /// `user_id` 取自已认证身份（控制器从 token 取），不信请求体。
+    pub async fn issue(&self, user_id: i64, req: IssuePolicyReq) -> Result<Policy> {
         let policy_no = Self::policy_no();
-        let issue_type = if req.issue_type.is_empty() { "NEW".to_string() } else { req.issue_type.clone() };
 
         let row: Option<Row> = self
             .db
@@ -58,10 +54,10 @@ impl PolicyService {
                 Box::pin(async move {
                     let order: Option<Row> = tx
                         .exec_first(
-                            "SELECT id, product_id, product_name, holder_name, \
+                            "SELECT id, quote_id, product_id, product_name, holder_name, \
                              insurance_amount, term_months, payable_amount, status \
                              FROM orders WHERE id = ? AND user_id = ? AND deleted_at IS NULL LIMIT 1",
-                            vec![req.order_id, req.user_id],
+                            vec![req.order_id, user_id],
                         )
                         .await
                         .map_err(db_error)?;
@@ -70,6 +66,7 @@ impl PolicyService {
                     if order_status != OrderStatus::PAID {
                         return Err(AppError::business("订单未支付，无法签发保单"));
                     }
+                    let quote_id: i64 = order.get("quote_id").unwrap_or_default();
                     let product_id: i64 = order.get("product_id").unwrap_or_default();
                     let product_name: String = order.get("product_name").unwrap_or_default();
                     let holder_name: String = order.get("holder_name").unwrap_or_default();
@@ -81,7 +78,7 @@ impl PolicyService {
                         .exec_first(
                             "SELECT effective_date, expire_date, premium_detail, holder_id \
                              FROM quotes WHERE id = ? AND user_id = ? LIMIT 1",
-                            vec![req.quote_id, req.user_id],
+                            vec![quote_id, user_id],
                         )
                         .await
                         .map_err(db_error)?;
@@ -116,8 +113,8 @@ impl PolicyService {
                             id.into(),
                             Value::from(&policy_no),
                             Value::from(req.order_id),
-                            Value::from(req.quote_id),
-                            Value::from(req.user_id),
+                            Value::from(quote_id),
+                            Value::from(user_id),
                             value_opt_int(holder_id),
                             Value::from(product_id),
                             Value::from(&product_name),
@@ -128,8 +125,8 @@ impl PolicyService {
                             Value::from(&ed),
                             Value::from(&xd),
                             Value::from(Policy::STATUS_ACTIVE.to_string()),
-                            Value::from(issue_type),
-                            Value::from(req.is_renewable),
+                            Value::from("NEW"),
+                            Value::from(false),
                             json_val(premium_detail),
                             Value::from(&dt),
                             Value::from(&dt),
@@ -144,7 +141,7 @@ impl PolicyService {
                         vec![
                             Value::from(OrderStatus::POLICY_ISSUED),
                             Value::from(req.order_id),
-                            Value::from(req.user_id),
+                            Value::from(user_id),
                         ],
                     )
                     .await
@@ -161,12 +158,16 @@ impl PolicyService {
             .ok_or_else(|| AppError::business("保单签发后回读失败"))
     }
 
-    pub async fn by_id(&self, id: i64) -> Result<Policy> {
+    /// 保单详情：按 id 且归属 `user_id` 查（未删除）。
+    pub async fn by_id(&self, id: i64, user_id: i64) -> Result<Policy> {
         let row: Option<Row> = self
             .db
             .conn()
             .await?
-            .exec_first("SELECT * FROM policies WHERE id = ? AND deleted_at IS NULL LIMIT 1", vec![id])
+            .exec_first(
+                "SELECT * FROM policies WHERE id = ? AND user_id = ? AND deleted_at IS NULL LIMIT 1",
+                vec![id, user_id],
+            )
             .await
             .map_err(db_error)?;
         row.map(|r| row_to_policy(&r)).transpose()?.ok_or(AppError::NotFound)
@@ -281,7 +282,7 @@ impl PolicyService {
             })
             .await?;
 
-        self.by_id(new_id).await
+        self.by_id(new_id, user_id).await
     }
 
     /// 退保：校验原保单归属本人且状态为 ACTIVE（在保）后，置为 SURRENDERED（退保）。

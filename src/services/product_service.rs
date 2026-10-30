@@ -87,7 +87,6 @@ pub async fn featured(db: &Db, page: u32, size: u32) -> Result<Vec<InsuranceProd
 /// 商品建档/更新请求体（同 product_code → UPDATE，否则 INSERT；status 缺省 DRAFT）
 #[derive(Debug, Deserialize)]
 pub struct AdminUpsertReq {
-    pub operator_user_id: i64,
     pub product_code: String,
     pub name: String,
     pub subtitle: Option<String>,
@@ -119,7 +118,6 @@ pub struct AdminUpsertReq {
 /// 商品上下架请求体
 #[derive(Debug, Deserialize)]
 pub struct AdminStatusReq {
-    pub operator_user_id: i64,
     pub status: String,
 }
 
@@ -141,8 +139,9 @@ async fn ensure_operator(db: &Db, user_id: i64) -> Result<()> {
 }
 
 /// 商品建档/更新：同 product_code（未软删）→ UPDATE，否则 INSERT；成功后回读整行。
-pub async fn admin_upsert(db: &Db, req: &AdminUpsertReq) -> Result<InsuranceProduct> {
-    ensure_operator(db, req.operator_user_id).await?;
+/// `operator_id` 取自已认证身份（控制器从 token 取），不信请求体。
+pub async fn admin_upsert(db: &Db, operator_id: i64, req: &AdminUpsertReq) -> Result<InsuranceProduct> {
+    ensure_operator(db, operator_id).await?;
     let status = req
         .status
         .clone()
@@ -184,7 +183,7 @@ pub async fn admin_upsert(db: &Db, req: &AdminUpsertReq) -> Result<InsuranceProd
             value_opt_str(req.description.clone()),
             Value::from(&req.product_type),
             Value::from(&sale_channel),
-            Value::from(req.operator_user_id),
+            Value::from(operator_id),
             value_opt_str(req.insurer_name.clone()),
             Value::from(&currency),
             value_opt_str(req.min_amount.map(|d| d.to_string())),
@@ -220,7 +219,7 @@ pub async fn admin_upsert(db: &Db, req: &AdminUpsertReq) -> Result<InsuranceProd
             value_opt_str(req.description.clone()),
             Value::from(&req.product_type),
             Value::from(&sale_channel),
-            Value::from(req.operator_user_id),
+            Value::from(operator_id),
             value_opt_str(req.insurer_name.clone()),
             Value::from(&currency),
             value_opt_str(req.min_amount.map(|d| d.to_string())),
@@ -259,9 +258,10 @@ pub async fn admin_upsert(db: &Db, req: &AdminUpsertReq) -> Result<InsuranceProd
 pub async fn admin_change_status(
     db: &Db,
     product_id: i64,
+    operator_id: i64,
     req: &AdminStatusReq,
 ) -> Result<InsuranceProduct> {
-    ensure_operator(db, req.operator_user_id).await?;
+    ensure_operator(db, operator_id).await?;
     let status = req.status.as_str();
     if ![
         InsuranceProduct::STATUS_ON_SALE,
@@ -281,7 +281,7 @@ pub async fn admin_change_status(
              WHERE id = ? AND deleted_at IS NULL",
             vec![
                 Value::from(status.to_string()),
-                Value::from(req.operator_user_id),
+                Value::from(operator_id),
                 Value::from(product_id),
             ],
         )

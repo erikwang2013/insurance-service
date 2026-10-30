@@ -9,7 +9,7 @@ use bee_rust::bee_router::{Context, Controller};
 
 use crate::services::contract_service::{CreateContractReq, ContractService};
 
-use super::{error_response, json_envelope, ok_response, read_json};
+use super::{current_user_id, error_response, json_envelope, ok_response, read_json};
 
 /// 电子合同控制器（持有 ContractService，按请求路径与方法分派动作）
 pub struct ContractController {
@@ -26,7 +26,11 @@ impl ContractController {
             Some(id) => id,
             None => return self.reply(ctx, json_envelope(40000, "合同 id 参数无效")).await,
         };
-        match self.service.by_id(id).await {
+        let user_id = match current_user_id(ctx) {
+            Ok(id) => id,
+            Err(resp) => return self.reply(ctx, resp).await,
+        };
+        match self.service.by_id(id, user_id).await {
             Ok(c) => {
                 let data = serde_json::to_value(&c)
                     .map_err(|e| RouterError::SerializeError(e.to_string()))?;
@@ -41,11 +45,15 @@ impl ContractController {
             Some(id) => id,
             None => return self.reply(ctx, json_envelope(40000, "合同 id 参数无效")).await,
         };
+        let user_id = match current_user_id(ctx) {
+            Ok(id) => id,
+            Err(resp) => return self.reply(ctx, resp).await,
+        };
         let req: CreateContractReq = match read_json(ctx).await {
             Ok(r) => r,
             Err(resp) => return self.reply(ctx, resp).await,
         };
-        match self.service.sign(req).await {
+        match self.service.sign(user_id, req).await {
             Ok(c) => {
                 let data = serde_json::to_value(&c)
                     .map_err(|e| RouterError::SerializeError(e.to_string()))?;
@@ -63,7 +71,11 @@ impl ContractController {
             Some(id) => id,
             None => return self.reply(ctx, json_envelope(40000, "合同 id 参数无效")).await,
         };
-        match self.service.sign_url(id).await {
+        let user_id = match current_user_id(ctx) {
+            Ok(id) => id,
+            Err(resp) => return self.reply(ctx, resp).await,
+        };
+        match self.service.sign_url(id, user_id).await {
             Ok(u) => {
                 let data = serde_json::to_value(&u)
                     .map_err(|e| RouterError::SerializeError(e.to_string()))?;

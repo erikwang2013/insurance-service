@@ -20,7 +20,6 @@ use crate::models::user::User;
 #[derive(Debug, Deserialize)]
 pub struct CreateClaimReq {
     pub policy_id: i64,
-    pub user_id: i64,
     /// 出险日期（可空）
     pub accident_date: Option<NaiveDate>,
     /// 出险类型/原因（可空）
@@ -34,8 +33,6 @@ pub struct CreateClaimReq {
 /// 理赔审核请求体
 #[derive(Debug, Deserialize)]
 pub struct ReviewClaimReq {
-    /// 审核人 id（须 OPERATOR / ADMIN）
-    pub reviewer_id: i64,
     /// 审核动作：APPROVE | REJECT
     pub action: String,
     /// 核定赔付金额（APPROVE 必填且 > 0；REJECT 时忽略）
@@ -44,11 +41,9 @@ pub struct ReviewClaimReq {
     pub remark: Option<String>,
 }
 
-/// 理赔资料上传请求体（操作者 user_id 与报案风格一致，显式传入）
+/// 理赔资料上传请求体（操作者身份取自已认证 token）
 #[derive(Debug, Deserialize)]
 pub struct UploadDocumentReq {
-    /// 操作者 id（须为理赔报案人或 ADMIN）
-    pub user_id: i64,
     /// 资料类型（如 申报单/病历/发票/其他）
     pub doc_type: String,
     /// 客户端原始文件名
@@ -73,7 +68,8 @@ impl ClaimService {
     }
 
     /// 报案：事务内校验保单归属 → INSERT claim → 回读。
-    pub async fn create(&self, req: CreateClaimReq) -> Result<Claim> {
+    /// `user_id` 取自已认证身份（控制器从 token 取），不信请求体。
+    pub async fn create(&self, user_id: i64, req: CreateClaimReq) -> Result<Claim> {
         if req.claim_amount <= Decimal::ZERO {
             return Err(AppError::business("赔付金额必须大于 0"));
         }
@@ -95,7 +91,7 @@ impl ClaimService {
                         .await
                         .map_err(db_error)?;
                     let (owner, order_id) = holder.ok_or_else(|| AppError::business("保单不存在"))?;
-                    if owner != req.user_id {
+                    if owner != user_id {
                         return Err(AppError::Forbidden);
                     }
 
@@ -106,7 +102,7 @@ impl ClaimService {
                         Value::from(&claim_no),
                         Value::from(req.policy_id),
                         Value::from(order_id),
-                        Value::from(req.user_id),
+                        Value::from(user_id),
                         value_opt_str(accident_date_str),
                         value_opt_str(req.accident_type),
                         value_opt_str(req.accident_desc),
@@ -147,7 +143,8 @@ impl ClaimService {
     }
 
     /// 审核：校验审核人角色 → 事务内校验状态并 UPDATE → 回读整行。
-    pub async fn review(&self, claim_id: i64, req: ReviewClaimReq) -> Result<Claim> {
+    /// `reviewer_id` 取自已认证身份（控制器从 token 取），不信请求体。
+    pub async fn review(&self, claim_id: i64, reviewer_id: i64, req: ReviewClaimReq) -> Result<Claim> {
         // 1) 动作与金额校验（DB 前）
         let (status, approved_amount_str): (&str, Option<String>) = match req.action.as_str() {
             "APPROVE" => {
@@ -170,7 +167,7 @@ impl ClaimService {
             .await?
             .exec_first(
                 "SELECT role FROM users WHERE id = ? AND deleted_at IS NULL LIMIT 1",
-                vec![req.reviewer_id],
+                vec![reviewer_id],
             )
             .await
             .map_err(db_error)?;
@@ -183,7 +180,6 @@ impl ClaimService {
         }
 
         // 3) 事务内：校验当前状态为 SUBMITTED → UPDATE
-        let reviewer_id = req.reviewer_id;
         let remark = req.remark;
         self.db
             .with_tx(|tx| {
@@ -286,7 +282,13 @@ impl ClaimService {
     }
 
     /// 上传理赔资料：校验归属 → INSERT 元数据 → 回读整行。
-    pub async fn add_document(&self, claim_id: i64, req: UploadDocumentReq) -> Result<ClaimDocument> {
+    /// `user_id` 取自已认证身份（控制器从 token 取），不信请求体。
+    pub async fn add_document(
+        &self,
+        claim_id: i64,
+        user_id: i64,
+        req: UploadDocumentReq,
+    ) -> Result<ClaimDocument> {
         // DB 前校验（doc_type≤32、file_name/file_key≤255，与表列宽一致）
         let doc_type = req.doc_type.trim();
         let file_name = req.file_name.trim();
@@ -306,7 +308,7 @@ impl ClaimService {
         if file_name.len() > 255 || file_key.len() > 255 {
             return Err(AppError::business("文件名/file_key 最长 255 字符"));
         }
-        self.check_claim_access(claim_id, req.user_id).await?;
+        self.check_claim_access(claim_id, user_id).await?;
 
         let mut conn = self.db.conn().await?;
         // 主键由应用层 snowflake 预生成后显式插入（全库自增迁移，见 idgen）

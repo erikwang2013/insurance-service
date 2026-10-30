@@ -26,7 +26,10 @@ use crate::services::product_service::{
     admin_change_status, admin_upsert, AdminStatusReq, AdminUpsertReq,
 };
 
-use super::{error_response, json_envelope, ok_response, query_map, read_json};
+use super::{
+    current_user_id, error_response, json_envelope, ok_response, query_map, read_json,
+    require_operator,
+};
 
 /// 运营侧商品控制器（持有 Db，按请求路径分派动作）
 pub struct AdminController {
@@ -39,11 +42,19 @@ impl AdminController {
     }
 
     async fn upsert(&self, ctx: &mut Context) -> Result<(), RouterError> {
+        // 中间件已按路由拦截；控制器再按 token 角色防御一层。
+        if let Err(resp) = require_operator(ctx) {
+            return self.reply(ctx, resp).await;
+        }
+        let operator_id = match current_user_id(ctx) {
+            Ok(id) => id,
+            Err(resp) => return self.reply(ctx, resp).await,
+        };
         let req: AdminUpsertReq = match read_json(ctx).await {
             Ok(r) => r,
             Err(resp) => return self.reply(ctx, resp).await,
         };
-        match admin_upsert(&self.db, &req).await {
+        match admin_upsert(&self.db, operator_id, &req).await {
             Ok(p) => {
                 let data = serde_json::to_value(&p)
                     .map_err(|e| RouterError::SerializeError(e.to_string()))?;
@@ -54,17 +65,24 @@ impl AdminController {
     }
 
     async fn change_status(&self, ctx: &mut Context) -> Result<(), RouterError> {
+        if let Err(resp) = require_operator(ctx) {
+            return self.reply(ctx, resp).await;
+        }
         let product_id = match ctx.param("id").and_then(|s| s.parse::<i64>().ok()) {
             Some(id) => id,
             None => {
                 return self.reply(ctx, json_envelope(40000, "商品 id 参数无效")).await;
             }
         };
+        let operator_id = match current_user_id(ctx) {
+            Ok(id) => id,
+            Err(resp) => return self.reply(ctx, resp).await,
+        };
         let req: AdminStatusReq = match read_json(ctx).await {
             Ok(r) => r,
             Err(resp) => return self.reply(ctx, resp).await,
         };
-        match admin_change_status(&self.db, product_id, &req).await {
+        match admin_change_status(&self.db, product_id, operator_id, &req).await {
             Ok(p) => {
                 let data = serde_json::to_value(&p)
                     .map_err(|e| RouterError::SerializeError(e.to_string()))?;
@@ -76,17 +94,20 @@ impl AdminController {
 
     /// GET /api/v1/admin/audit-logs：运营端审计日志查询（须 OPERATOR/ADMIN）
     ///
-    /// query 参数：`operator_user_id` 必填（操作人身份，用于角色校验）；
+    /// 操作人取自已认证 token（角色校验用，不再接受 query 参数）；
     /// `user_id`/`action`/`entity_type`/`entity_id` 精确过滤（可选）；
     /// `created_from`/`created_to` 时间范围（可选，支持 `YYYY-MM-DD` 或
     /// `YYYY-MM-DD HH:MM:SS`，闭区间）；`page` 从 1 起、`size` 1..=100
     /// （缺省 1/20）。按 `created_at DESC, id DESC` 排序，返回行 + 过滤后总数。
     async fn audit_logs(&self, ctx: &mut Context) -> Result<(), RouterError> {
-        let q = query_map(ctx.request.uri().query());
-        let operator_id: i64 = match q.get("operator_user_id").and_then(|s| s.parse().ok()) {
-            Some(id) => id,
-            None => return self.reply(ctx, json_envelope(40000, "缺少 operator_user_id")).await,
+        if let Err(resp) = require_operator(ctx) {
+            return self.reply(ctx, resp).await;
+        }
+        let operator_id = match current_user_id(ctx) {
+            Ok(id) => id,
+            Err(resp) => return self.reply(ctx, resp).await,
         };
+        let q = query_map(ctx.request.uri().query());
         let page: u32 = q.get("page").and_then(|s| s.parse().ok()).unwrap_or(1);
         let size = q.get("size").and_then(|s| s.parse().ok()).unwrap_or(20u32);
         let size = size.clamp(1, 100) as usize;

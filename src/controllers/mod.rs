@@ -220,14 +220,21 @@ pub(crate) fn current_user_id(ctx: &Context) -> Result<i64, Response> {
         .ok_or_else(|| json_envelope(40100, "未认证"))
 }
 
-/// 当前认证用户角色（由库中 users.role 解析，Task 3+ 的角色判定使用）。
-#[allow(dead_code)] // Task 3 起由业务控制器使用
+/// 当前认证用户角色（由库中 users.role 解析）。
 pub(crate) fn current_role(ctx: &Context) -> Result<Role, Response> {
     ctx.request
         .extensions()
         .get::<AuthUser>()
         .map(|u| u.role)
         .ok_or_else(|| json_envelope(40100, "未认证"))
+}
+
+/// 运营/管理员守卫（中间件已按路由拦截，控制器再做一层防御）。
+pub(crate) fn require_operator(ctx: &Context) -> Result<(), Response> {
+    match current_role(ctx)? {
+        Role::Operator | Role::Admin => Ok(()),
+        _ => Err(json_envelope(40300, "无权限")),
+    }
 }
 
 // ---------------------------------------------------------------------------

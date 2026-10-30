@@ -106,8 +106,10 @@ pub fn build_bee_router(state: AppState) -> axum::Router {
                 .post("/payments/wechat/prepay", payment_handler)
                 .post("/payments/callback/{provider}", payment_handler)
                 // policies
+                .post("/policies", policy_handler)
                 .get("/policies", policy_handler)
                 .get("/policies/{id}", policy_handler)
+                .post("/policies/{id}/lapse", policy_handler)
                 .post("/policies/{id}/beneficiaries", policy_handler)
                 // contracts
                 .get("/contracts/{id}", contract_handler)
@@ -374,6 +376,8 @@ mod tests {
             assert_eq!(classify(&get, path), Access::User, "{path} 应为登录用户");
         }
         assert_eq!(classify(&post, "/api/v1/quotes"), Access::User);
+        assert_eq!(classify(&post, "/api/v1/policies"), Access::User);
+        assert_eq!(classify(&post, "/api/v1/policies/1/lapse"), Access::User);
     }
 
     /// 构造可离线装配的 AppState（Db 惰性建连，测试不会真正连库）

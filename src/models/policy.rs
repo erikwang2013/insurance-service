@@ -72,10 +72,9 @@ pub struct Beneficiary {
     pub sort_order: i32,
 }
 
-/// 批改-受益人变更请求体（user_id 为操作人；与仓内 POST 动作一致自证式取身份）
+/// 批改-受益人变更请求体（操作人身份取自已认证 token）
 #[derive(Debug, Deserialize)]
 pub struct EndorseBeneficiariesReq {
-    pub user_id: i64,
     /// 新受益人名单（整单替换；至少 1 人，LEGAL 与 NAMED 不可混用）
     pub beneficiaries: Vec<BeneficiaryInput>,
 }

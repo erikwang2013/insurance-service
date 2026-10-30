@@ -17,8 +17,6 @@ use crate::models::contract::Contract;
 #[derive(Debug, Deserialize)]
 pub struct CreateContractReq {
     pub policy_id: i64,
-    pub order_id: i64,
-    pub user_id: i64,
     #[serde(default = "default_title")]
     pub title: String,
     #[serde(default = "default_type")]
@@ -48,7 +46,8 @@ impl ContractService {
         format!("CT{}{:04x}", Utc::now().timestamp_millis(), Uuid::new_v4().as_u128() as u64 & 0xFFFF)
     }
 
-    pub async fn sign(&self, req: CreateContractReq) -> Result<Contract> {
+    /// `user_id` 取自已认证身份（控制器从 token 取）；`order_id` 以保单行为准，不信请求体。
+    pub async fn sign(&self, user_id: i64, req: CreateContractReq) -> Result<Contract> {
         let contract_no = Self::contract_no();
 
         let row: Option<Row> = self
@@ -57,8 +56,8 @@ impl ContractService {
                 Box::pin(async move {
                     let pol: Option<Row> = tx
                         .exec_first(
-                            "SELECT id, status FROM policies WHERE id = ? AND user_id = ? AND deleted_at IS NULL LIMIT 1",
-                            vec![req.policy_id, req.user_id],
+                            "SELECT id, status, order_id FROM policies WHERE id = ? AND user_id = ? AND deleted_at IS NULL LIMIT 1",
+                            vec![req.policy_id, user_id],
                         )
                         .await
                         .map_err(db_error)?;
@@ -67,6 +66,7 @@ impl ContractService {
                     if pol_status != PolicyStatus::ACTIVE {
                         return Err(AppError::business("保单状态不可签约"));
                     }
+                    let order_id: i64 = pol.get("order_id").unwrap_or_default();
 
                     let now = Utc::now();
                     let dt = now.format("%Y-%m-%d %H:%M:%S").to_string();
@@ -83,7 +83,7 @@ impl ContractService {
                             id.into(),
                             Value::from(&contract_no),
                             Value::from(req.policy_id),
-                            Value::from(req.order_id),
+                            Value::from(order_id),
                             Value::from(&req.title),
                             Value::from(&req.contract_type),
                             Value::NULL,
@@ -110,12 +110,17 @@ impl ContractService {
             .ok_or_else(|| AppError::business("合同签发后回读失败"))
     }
 
-    pub async fn by_id(&self, id: i64) -> Result<Contract> {
+    /// 合同详情：按 id 且归属 `user_id`（经 policies 关联）查。
+    pub async fn by_id(&self, id: i64, user_id: i64) -> Result<Contract> {
         let row: Option<Row> = self
             .db
             .conn()
             .await?
-            .exec_first("SELECT * FROM contracts WHERE id = ? AND deleted_at IS NULL LIMIT 1", vec![id])
+            .exec_first(
+                "SELECT c.* FROM contracts c JOIN policies p ON p.id = c.policy_id \
+                 WHERE c.id = ? AND p.user_id = ? AND c.deleted_at IS NULL LIMIT 1",
+                vec![id, user_id],
+            )
             .await
             .map_err(db_error)?;
         row.map(|r| row_to_contract(&r)).transpose()?.ok_or(AppError::NotFound)
@@ -127,8 +132,8 @@ impl ContractService {
     /// 地址与 MockEsignProvider 语义一致：`/sign/mock/{sign_flow_id}`；合同尚无
     /// 平台流程 ID 时按 MockEsignProvider::create_contract 对同合同的命名回退，
     /// 保证 URL 稳定可派生。
-    pub async fn sign_url(&self, id: i64) -> Result<ContractSignUrl> {
-        let c = self.by_id(id).await?;
+    pub async fn sign_url(&self, id: i64, user_id: i64) -> Result<ContractSignUrl> {
+        let c = self.by_id(id, user_id).await?;
         match c.status.as_str() {
             Contract::STATUS_VOID | Contract::STATUS_EXPIRED | Contract::STATUS_REJECTED => {
                 return Err(AppError::business("合同已终止，不可签署"));

@@ -24,7 +24,6 @@ use crate::models::quote::Quote;
 #[derive(Debug, Deserialize)]
 pub struct CreateQuoteReq {
     pub product_id: i64,
-    pub user_id: i64,
 
     /// 投保人
     pub holder_name: String,
@@ -83,7 +82,8 @@ impl QuoteService {
     }
 
     /// 事务内创建报价：产品存在性校验 → 落库 quote → 落库受益人 → 回读。
-    pub async fn create(&self, req: CreateQuoteReq) -> Result<Quote> {
+    /// `user_id` 取自已认证身份（控制器从 token 取），不信请求体。
+    pub async fn create(&self, user_id: i64, req: CreateQuoteReq) -> Result<Quote> {
         let quote_no = Self::generate_quote_no();
         let now = Utc::now();
         let expires_at = now + chrono::Duration::days(7);
@@ -152,7 +152,7 @@ impl QuoteService {
                         quote_id.into(),
                         Value::from(&quote_no),
                         Value::from(req.product_id),
-                        Value::from(req.user_id),
+                        Value::from(user_id),
                         Value::from(req.holder_name.clone()),
                         value_opt_vec(req.holder_id_card_enc.clone()),
                         Value::from(req.insurance_amount.to_string()),
@@ -227,15 +227,15 @@ impl QuoteService {
         Ok(quote)
     }
 
-    /// 报价详情：按 id 查（未删除），无行返回 NotFound。
-    pub async fn by_id(&self, id: i64) -> Result<Quote> {
+    /// 报价详情：按 id 且归属 `user_id` 查（未删除），无行返回 NotFound。
+    pub async fn by_id(&self, id: i64, user_id: i64) -> Result<Quote> {
         let row: Option<mysql_async::Row> = self
             .db
             .conn()
             .await?
             .exec_first(
-                "SELECT * FROM quotes WHERE id = ? AND deleted_at IS NULL LIMIT 1",
-                vec![id],
+                "SELECT * FROM quotes WHERE id = ? AND user_id = ? AND deleted_at IS NULL LIMIT 1",
+                vec![id, user_id],
             )
             .await
             .map_err(db_error)?;

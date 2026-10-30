@@ -11,7 +11,10 @@ use crate::services::claim_service::{
     ClaimService, CreateClaimReq, ReviewClaimReq, UploadDocumentReq,
 };
 
-use super::{error_response, json_envelope, ok_response, query_map, read_json};
+use super::{
+    current_user_id, error_response, json_envelope, ok_response, query_map, read_json,
+    require_operator,
+};
 
 /// 理赔控制器（持有 ClaimService，按请求路径与方法分派动作）
 pub struct ClaimController {
@@ -24,11 +27,15 @@ impl ClaimController {
     }
 
     async fn create(&self, ctx: &mut Context) -> Result<(), RouterError> {
+        let user_id = match current_user_id(ctx) {
+            Ok(id) => id,
+            Err(resp) => return self.reply(ctx, resp).await,
+        };
         let req: CreateClaimReq = match read_json(ctx).await {
             Ok(r) => r,
             Err(resp) => return self.reply(ctx, resp).await,
         };
-        match self.service.create(req).await {
+        match self.service.create(user_id, req).await {
             Ok(c) => {
                 let data = serde_json::to_value(&c)
                     .map_err(|e| RouterError::SerializeError(e.to_string()))?;
@@ -43,11 +50,19 @@ impl ClaimController {
             Some(id) => id,
             None => return self.reply(ctx, json_envelope(40000, "理赔单 id 参数无效")).await,
         };
+        // 中间件已按路由拦截；控制器再按 token 角色防御一层。
+        if let Err(resp) = require_operator(ctx) {
+            return self.reply(ctx, resp).await;
+        }
+        let reviewer_id = match current_user_id(ctx) {
+            Ok(id) => id,
+            Err(resp) => return self.reply(ctx, resp).await,
+        };
         let req: ReviewClaimReq = match read_json(ctx).await {
             Ok(r) => r,
             Err(resp) => return self.reply(ctx, resp).await,
         };
-        match self.service.review(claim_id, req).await {
+        match self.service.review(claim_id, reviewer_id, req).await {
             Ok(c) => {
                 let data = serde_json::to_value(&c)
                     .map_err(|e| RouterError::SerializeError(e.to_string()))?;
@@ -58,11 +73,11 @@ impl ClaimController {
     }
 
     async fn my_claims(&self, ctx: &mut Context) -> Result<(), RouterError> {
-        let q = query_map(ctx.request.uri().query());
-        let user_id: i64 = match q.get("user_id").and_then(|s| s.parse().ok()) {
-            Some(id) => id,
-            None => return self.reply(ctx, json_envelope(40000, "缺少 user_id")).await,
+        let user_id = match current_user_id(ctx) {
+            Ok(id) => id,
+            Err(resp) => return self.reply(ctx, resp).await,
         };
+        let q = query_map(ctx.request.uri().query());
         let page = q.get("page").and_then(|s| s.parse().ok()).unwrap_or(1);
         let size = q.get("size").and_then(|s| s.parse().ok()).unwrap_or(20);
         match self.service.by_user(user_id, page, size).await {
@@ -78,17 +93,21 @@ impl ClaimController {
         }
     }
 
-    /// 上传理赔资料（POST /claims/{id}/documents，操作者 user_id 显式入 body）
+    /// 上传理赔资料（POST /claims/{id}/documents，操作者身份取 token）
     async fn upload_documents(&self, ctx: &mut Context) -> Result<(), RouterError> {
         let claim_id = match ctx.param("id").and_then(|s| s.parse::<i64>().ok()) {
             Some(id) => id,
             None => return self.reply(ctx, json_envelope(40000, "理赔单 id 参数无效")).await,
         };
+        let user_id = match current_user_id(ctx) {
+            Ok(id) => id,
+            Err(resp) => return self.reply(ctx, resp).await,
+        };
         let req: UploadDocumentReq = match read_json(ctx).await {
             Ok(r) => r,
             Err(resp) => return self.reply(ctx, resp).await,
         };
-        match self.service.add_document(claim_id, req).await {
+        match self.service.add_document(claim_id, user_id, req).await {
             Ok(doc) => {
                 let data = serde_json::to_value(&doc)
                     .map_err(|e| RouterError::SerializeError(e.to_string()))?;
@@ -98,16 +117,15 @@ impl ClaimController {
         }
     }
 
-    /// 理赔资料列表（GET /claims/{id}/documents，user_id 经 query 传入，同 my_claims）
+    /// 理赔资料列表（GET /claims/{id}/documents，操作者身份取 token）
     async fn list_documents(&self, ctx: &mut Context) -> Result<(), RouterError> {
         let claim_id = match ctx.param("id").and_then(|s| s.parse::<i64>().ok()) {
             Some(id) => id,
             None => return self.reply(ctx, json_envelope(40000, "理赔单 id 参数无效")).await,
         };
-        let q = query_map(ctx.request.uri().query());
-        let user_id: i64 = match q.get("user_id").and_then(|s| s.parse().ok()) {
-            Some(id) => id,
-            None => return self.reply(ctx, json_envelope(40000, "缺少 user_id")).await,
+        let user_id = match current_user_id(ctx) {
+            Ok(id) => id,
+            Err(resp) => return self.reply(ctx, resp).await,
         };
         match self.service.list_documents(claim_id, user_id).await {
             Ok(list) => {

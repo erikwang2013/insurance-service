@@ -8,9 +8,18 @@ use bee_rust::bee_router::context::RouterError;
 use bee_rust::bee_router::{Context, Controller};
 
 use crate::models::policy::EndorseBeneficiariesReq;
-use crate::services::policy_service::PolicyService;
+use crate::services::policy_service::{IssuePolicyReq, PolicyService};
 
-use super::{error_response, json_envelope, ok_response, query_map, read_json};
+use super::{
+    current_user_id, error_response, json_envelope, ok_response, query_map, read_json,
+};
+
+/// 退保请求体（原因可选，写入审计日志）
+#[derive(Debug, serde::Deserialize)]
+struct LapseReq {
+    #[serde(default)]
+    reason: Option<String>,
+}
 
 /// 保单控制器（持有 PolicyService，按请求路径与方法分派动作）
 pub struct PolicyController {
@@ -27,7 +36,11 @@ impl PolicyController {
             Some(id) => id,
             None => return self.reply(ctx, json_envelope(40000, "保单 id 参数无效")).await,
         };
-        match self.service.by_id(id).await {
+        let user_id = match current_user_id(ctx) {
+            Ok(id) => id,
+            Err(resp) => return self.reply(ctx, resp).await,
+        };
+        match self.service.by_id(id, user_id).await {
             Ok(p) => {
                 let data = serde_json::to_value(&p)
                     .map_err(|e| RouterError::SerializeError(e.to_string()))?;
@@ -38,11 +51,11 @@ impl PolicyController {
     }
 
     async fn my_policies(&self, ctx: &mut Context) -> Result<(), RouterError> {
-        let q = query_map(ctx.request.uri().query());
-        let user_id: i64 = match q.get("user_id").and_then(|s| s.parse().ok()) {
-            Some(id) => id,
-            None => return self.reply(ctx, json_envelope(40000, "缺少 user_id")).await,
+        let user_id = match current_user_id(ctx) {
+            Ok(id) => id,
+            Err(resp) => return self.reply(ctx, resp).await,
         };
+        let q = query_map(ctx.request.uri().query());
         let page = q.get("page").and_then(|s| s.parse().ok()).unwrap_or(1);
         let size = q.get("size").and_then(|s| s.parse().ok()).unwrap_or(20);
         match self.service.by_user(user_id, page, size).await {
@@ -58,17 +71,65 @@ impl PolicyController {
         }
     }
 
-    /// 批改-受益人变更（POST /policies/{id}/beneficiaries，操作者 user_id 显式入 body）
+    /// 签发保单（POST /policies，订单归属与报价均以服务端数据为准）
+    async fn issue(&self, ctx: &mut Context) -> Result<(), RouterError> {
+        let user_id = match current_user_id(ctx) {
+            Ok(id) => id,
+            Err(resp) => return self.reply(ctx, resp).await,
+        };
+        let req: IssuePolicyReq = match read_json(ctx).await {
+            Ok(r) => r,
+            Err(resp) => return self.reply(ctx, resp).await,
+        };
+        match self.service.issue(user_id, req).await {
+            Ok(p) => {
+                let data = serde_json::to_value(&p)
+                    .map_err(|e| RouterError::SerializeError(e.to_string()))?;
+                self.reply(ctx, ok_response(data)).await
+            }
+            Err(e) => self.reply(ctx, error_response(&e)).await,
+        }
+    }
+
+    /// 退保（POST /policies/{id}/lapse，仅 ACTIVE 在保）
+    async fn lapse(&self, ctx: &mut Context) -> Result<(), RouterError> {
+        let id = match ctx.param("id").and_then(|s| s.parse::<i64>().ok()) {
+            Some(id) => id,
+            None => return self.reply(ctx, json_envelope(40000, "保单 id 参数无效")).await,
+        };
+        let user_id = match current_user_id(ctx) {
+            Ok(id) => id,
+            Err(resp) => return self.reply(ctx, resp).await,
+        };
+        let req: LapseReq = match read_json(ctx).await {
+            Ok(r) => r,
+            Err(resp) => return self.reply(ctx, resp).await,
+        };
+        match self.service.lapse(user_id, id, req.reason).await {
+            Ok(p) => {
+                let data = serde_json::to_value(&p)
+                    .map_err(|e| RouterError::SerializeError(e.to_string()))?;
+                self.reply(ctx, ok_response(data)).await
+            }
+            Err(e) => self.reply(ctx, error_response(&e)).await,
+        }
+    }
+
+    /// 批改-受益人变更（POST /policies/{id}/beneficiaries，操作者身份取 token）
     async fn endorse(&self, ctx: &mut Context) -> Result<(), RouterError> {
         let id = match ctx.param("id").and_then(|s| s.parse::<i64>().ok()) {
             Some(id) => id,
             None => return self.reply(ctx, json_envelope(40000, "保单 id 参数无效")).await,
         };
+        let user_id = match current_user_id(ctx) {
+            Ok(id) => id,
+            Err(resp) => return self.reply(ctx, resp).await,
+        };
         let req: EndorseBeneficiariesReq = match read_json(ctx).await {
             Ok(r) => r,
             Err(resp) => return self.reply(ctx, resp).await,
         };
-        match self.service.endorse_beneficiaries(req.user_id, id, req).await {
+        match self.service.endorse_beneficiaries(user_id, id, req).await {
             Ok((policy, bens)) => {
                 let data = serde_json::json!({ "policy": policy, "beneficiaries": bens });
                 self.reply(ctx, ok_response(data)).await
@@ -93,8 +154,12 @@ impl Controller for PolicyController {
     async fn handle(&self, ctx: &mut Context) -> Result<(), RouterError> {
         let path = ctx.request.uri().path().to_string();
         let method = ctx.request.method().clone();
-        if method == axum::http::Method::POST && path.ends_with("/beneficiaries") {
+        if method == axum::http::Method::POST && path.ends_with("/lapse") {
+            self.lapse(ctx).await
+        } else if method == axum::http::Method::POST && path.ends_with("/beneficiaries") {
             self.endorse(ctx).await
+        } else if method == axum::http::Method::POST && path.ends_with("/policies") {
+            self.issue(ctx).await
         } else if method != axum::http::Method::GET {
             ctx.abort(StatusCode::NOT_FOUND, "接口不存在");
             Ok(())
