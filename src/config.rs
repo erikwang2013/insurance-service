@@ -89,12 +89,7 @@ impl AppConfig {
         };
         // JWT 密钥必须显式提供且足够长：弱默认值会让任何人伪造令牌
         let secret = env_required("JWT_SECRET")?;
-        if secret.len() < 32 {
-            return Err(format!(
-                "JWT_SECRET 长度不足 32 字节（当前 {} 字节），请配置足够长的随机密钥",
-                secret.len()
-            ));
-        }
+        validate_jwt_secret(&secret)?;
         let jwt = JwtConfig {
             secret,
             issuer: env_or("JWT_ISSUER", "insurance-service"),
@@ -135,6 +130,24 @@ impl AppConfig {
     }
 }
 
+/// JWT 密钥校验：拒绝示例配置中的占位符，以及不足 32 字节的短密钥
+/// （二者都会让任何人都能伪造令牌）。
+fn validate_jwt_secret(secret: &str) -> Result<(), String> {
+    const PLACEHOLDERS: [&str; 1] = ["change-me-to-a-long-random-string"];
+    if PLACEHOLDERS.contains(&secret) {
+        return Err(
+            "JWT_SECRET 仍是示例占位符，请用 `openssl rand -base64 48` 生成随机密钥".to_string(),
+        );
+    }
+    if secret.len() < 32 {
+        return Err(format!(
+            "JWT_SECRET 长度不足 32 字节（当前 {} 字节），请配置足够长的随机密钥",
+            secret.len()
+        ));
+    }
+    Ok(())
+}
+
 fn env_required(key: &str) -> Result<String, String> {
     std::env::var(key).map_err(|_| format!("缺少必需环境变量 {key}（见 .env.example）"))
 }
@@ -165,7 +178,7 @@ pub fn redact_db_url(url: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::redact_db_url;
+    use super::{redact_db_url, validate_jwt_secret};
 
     #[test]
     fn redacts_credentials_in_db_url() {
@@ -191,6 +204,19 @@ mod tests {
             redact_db_url("alice@db.local/insurance"),
             "***@db.local/insurance"
         );
+    }
+
+    #[test]
+    fn rejects_known_placeholder_and_short_jwt_secrets() {
+        // .env.example 中的示例值虽然够长，但公开可猜，必须拒绝
+        assert!(validate_jwt_secret("change-me-to-a-long-random-string").is_err());
+        assert!(validate_jwt_secret("short").is_err());
+        assert!(validate_jwt_secret(&"a".repeat(31)).is_err());
+    }
+
+    #[test]
+    fn accepts_a_long_random_jwt_secret() {
+        assert!(validate_jwt_secret("A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8S9t0").is_ok());
     }
 
     #[test]

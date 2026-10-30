@@ -12,7 +12,7 @@ fn date(y: i32, m: u32, day: u32) -> NaiveDate {
 fn accident_date_must_fall_inside_coverage_period() {
     let start = date(2026, 1, 1);
     let end = date(2026, 12, 31);
-    let today = date(2026, 6, 1);
+    let today = end;
     // 缺省用今天；首尾日含在保障期内
     assert!(validate_accident_window(None, Some(start), Some(end), today).is_ok());
     assert!(validate_accident_window(Some(start), Some(start), Some(end), today).is_ok());
@@ -32,6 +32,22 @@ fn accident_date_must_fall_inside_coverage_period() {
     // 保障期缺失或倒置
     assert!(validate_accident_window(Some(start), None, Some(end), today).is_err());
     assert!(validate_accident_window(Some(start), Some(end), Some(start), today).is_err());
+}
+
+#[test]
+fn accident_date_cannot_be_in_the_future() {
+    let start = date(2026, 1, 1);
+    let end = date(2026, 12, 31);
+    let today = date(2026, 6, 1);
+    // 今天可以
+    assert!(validate_accident_window(Some(today), Some(start), Some(end), today).is_ok());
+    // 明天拒绝
+    let err =
+        validate_accident_window(Some(date(2026, 6, 2)), Some(start), Some(end), today)
+            .unwrap_err();
+    assert_eq!(err.to_string(), "业务错误: 出险日期不能晚于今天");
+    // 未来日期即使仍在保障期内也拒绝
+    assert!(validate_accident_window(Some(end), Some(start), Some(end), today).is_err());
 }
 
 #[test]

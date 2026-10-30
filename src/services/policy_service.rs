@@ -90,7 +90,7 @@ impl PolicyService {
 
                     let q: Option<Row> = tx
                         .exec_first(
-                            "SELECT effective_date, expire_date, premium_detail, holder_id \
+                            "SELECT effective_date, premium_detail, holder_id, created_at \
                              FROM quotes WHERE id = ? AND user_id = ? LIMIT 1",
                             vec![quote_id, user_id],
                         )
@@ -101,12 +101,16 @@ impl PolicyService {
                         .get::<Option<NaiveDate>, &str>("effective_date")
                         .flatten()
                         .unwrap_or_else(|| Utc::now().date_naive());
-                    let expire_date: NaiveDate = q
-                        .get::<Option<NaiveDate>, &str>("expire_date")
-                        .flatten()
-                        .unwrap_or_else(|| {
-                            effective_date.checked_add_days(chrono::Days::new(365)).unwrap_or(effective_date)
-                        });
+                    // 生效日不得早于报价创建日；止期只按订单保障期推导，不采用报价/客户端日期
+                    if effective_date < dt_row(&q, "created_at").date_naive() {
+                        return Err(AppError::business("生效日期早于报价创建日期"));
+                    }
+                    if term_months <= 0 {
+                        return Err(AppError::business("保障期无效，无法签发保单"));
+                    }
+                    let expire_date = effective_date
+                        .checked_add_months(chrono::Months::new(term_months as u32))
+                        .ok_or_else(|| AppError::business("保障期无效，无法签发保单"))?;
                     let premium_detail = json_opt_row(&q, "premium_detail");
                     let holder_id: Option<i64> = q.get("holder_id").flatten();
 

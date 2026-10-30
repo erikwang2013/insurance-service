@@ -41,10 +41,8 @@ pub struct CreateQuoteReq {
     pub term_months: i32,
     /// 保费明细（JSON）
     pub premium_detail: Option<serde_json::Value>,
-    /// 生效日
+    /// 生效日（缺省今天，不得早于今天）
     pub effective_date: Option<NaiveDate>,
-    /// 失效日
-    pub expire_date: Option<NaiveDate>,
     /// 健康告知（JSON）
     pub health_declaration: Option<serde_json::Value>,
     /// 风险评估分
@@ -93,10 +91,11 @@ impl QuoteService {
             req.premium_detail.as_ref().and_then(|v| serde_json::to_string(v).ok());
         let health_declaration_str: Option<String> =
             req.health_declaration.as_ref().and_then(|v| serde_json::to_string(v).ok());
-        let effective_date_str: Option<String> =
-            req.effective_date.map(|d| d.format("%Y-%m-%d").to_string());
-        let expire_date_str: Option<String> =
-            req.expire_date.map(|d| d.format("%Y-%m-%d").to_string());
+        // 保障期只由服务端推导：客户端失效日一律忽略（请求体中即使出现也不会被反序列化）
+        let (effective_date, expire_date) =
+            coverage_window(req.effective_date, req.term_months, now.date_naive())?;
+        let effective_date_str = effective_date.format("%Y-%m-%d").to_string();
+        let expire_date_str = expire_date.format("%Y-%m-%d").to_string();
 
         // 主键由应用层 snowflake 预生成后显式插入（全库自增迁移，见 idgen）
         let quote_id = crate::utils::idgen::next_id();
@@ -177,8 +176,8 @@ impl QuoteService {
                         Value::from(req.term_months),
                         Value::from(premium.to_string()),
                         value_opt_str(premium_detail_str),
-                        value_opt_str(effective_date_str),
-                        value_opt_str(expire_date_str),
+                        Value::from(effective_date_str),
+                        Value::from(expire_date_str),
                         value_opt_str(health_declaration_str),
                         value_opt_int(req.risk_score),
                         Value::from(now.format("%Y-%m-%d %H:%M:%S").to_string()),
@@ -285,6 +284,26 @@ fn validate_quote_bounds(
     Ok(())
 }
 
+/// 保障期推导：`expire = effective + term_months`（月粒度，月末自动夹到当月最后一天）。
+/// 生效日缺省今天，且不得早于今天；保障期必须为正且不溢出日历。
+fn coverage_window(
+    effective: Option<NaiveDate>,
+    term_months: i32,
+    today: NaiveDate,
+) -> Result<(NaiveDate, NaiveDate)> {
+    if term_months <= 0 {
+        return Err(AppError::business("保障期必须大于 0"));
+    }
+    let effective = effective.unwrap_or(today);
+    if effective < today {
+        return Err(AppError::business("生效日期不能早于今天"));
+    }
+    let expire = effective
+        .checked_add_months(chrono::Months::new(term_months as u32))
+        .ok_or_else(|| AppError::business("保障期超出可支持范围"))?;
+    Ok((effective, expire))
+}
+
 /// 整期保费试算：`premium = round(保额 × rate, 2)`；费率与结果都必须为正。
 fn compute_premium(amount: Decimal, rate: Decimal) -> Result<Decimal> {
     if rate <= Decimal::ZERO {
@@ -334,6 +353,57 @@ mod tests {
 
     fn d(n: i64) -> Decimal {
         Decimal::from(n)
+    }
+
+    fn date(y: i32, m: u32, day: u32) -> NaiveDate {
+        NaiveDate::from_ymd_opt(y, m, day).expect("测试日期合法")
+    }
+
+    #[test]
+    fn coverage_window_derives_expire_from_term_months() {
+        let today = date(2026, 1, 1);
+        let effective = date(2026, 1, 15);
+        assert_eq!(
+            coverage_window(Some(effective), 1, today).unwrap(),
+            (effective, date(2026, 2, 15))
+        );
+        assert_eq!(
+            coverage_window(Some(effective), 6, today).unwrap(),
+            (effective, date(2026, 7, 15))
+        );
+        assert_eq!(
+            coverage_window(Some(effective), 24, today).unwrap(),
+            (effective, date(2028, 1, 15))
+        );
+    }
+
+    #[test]
+    fn coverage_window_clamps_to_month_end() {
+        // 2024 为闰年：1 月 31 日 + 1 个月 = 2 月 29 日
+        let today = date(2024, 1, 1);
+        assert_eq!(
+            coverage_window(Some(date(2024, 1, 31)), 1, today).unwrap(),
+            (date(2024, 1, 31), date(2024, 2, 29))
+        );
+    }
+
+    #[test]
+    fn coverage_window_defaults_to_today_and_rejects_backdating() {
+        let today = date(2026, 5, 20);
+        assert_eq!(
+            coverage_window(None, 1, today).unwrap(),
+            (today, date(2026, 6, 20))
+        );
+        let err = coverage_window(Some(date(2026, 5, 19)), 12, today).unwrap_err();
+        assert_eq!(err.to_string(), "业务错误: 生效日期不能早于今天");
+    }
+
+    #[test]
+    fn coverage_window_rejects_non_positive_or_overflowing_term() {
+        let today = date(2026, 5, 20);
+        assert!(coverage_window(Some(today), 0, today).is_err());
+        assert!(coverage_window(Some(today), -1, today).is_err());
+        assert!(coverage_window(Some(today), i32::MAX, today).is_err());
     }
 
     #[test]

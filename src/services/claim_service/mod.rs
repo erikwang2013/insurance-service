@@ -389,7 +389,7 @@ impl ClaimService {
 
 // ---------- helpers ----------
 
-/// 出险日期必须落在保障期内（含首尾日）；缺失或倒置的保障期视为无效。
+/// 出险日期必须落在保障期内（含首尾日）且不得晚于今天；缺失或倒置的保障期视为无效。
 /// `accident_date` 缺省时用 `today` 校验。
 fn validate_accident_window(
     accident_date: Option<NaiveDate>,
@@ -404,6 +404,9 @@ fn validate_accident_window(
         return Err(AppError::business("保单保障期无效"));
     }
     let date = accident_date.unwrap_or(today);
+    if date > today {
+        return Err(AppError::business("出险日期不能晚于今天"));
+    }
     if date < effective || date > expire {
         return Err(AppError::business("出险日期不在保障期内"));
     }
