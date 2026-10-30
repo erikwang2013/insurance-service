@@ -1,5 +1,5 @@
-# 保险服务平台 bee-rust 应用配置模板
-# 复制为 config/app.toml 并填充真实值；支持 ${ENV_VAR} 环境变量插值
+# 保险服务平台 bee-rust 应用配置参考（字段对齐）
+# 当前运行时只读取环境变量（见 README / .env.example）；本文件不参与解析，仅用于字段与缺省值参考。
 
 [server]
 host = "0.0.0.0"
