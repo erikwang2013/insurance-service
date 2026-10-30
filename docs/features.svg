@@ -8,7 +8,7 @@
   </defs>
   <rect x="0" y="0" width="1000" height="560" fill="url(#bg)" rx="12"/>
 
-  <text x="500" y="28" text-anchor="middle" font-size="20" font-weight="700" fill="#1f2d3d">保险服务平台 · 项目功能总览</text>
+  <text x="500" y="28" text-anchor="middle" font-size="20" font-weight="700" fill="#1f2d3d">保险服务平台 · 项目功能总览（v1.11.0）</text>
 
   <!-- ===================== 1. 用户与认证 ===================== -->
   <g>
@@ -18,7 +18,7 @@
     <text x="260" y="72" text-anchor="middle" font-size="14" fill="#fff" font-weight="600">① 用户与认证</text>
     <text x="50" y="104" font-size="12.5" fill="#2b3a4a">• 注册：用户名唯一校验 + 密码 argon2 哈希存储，签发双令牌</text>
     <text x="50" y="124" font-size="12.5" fill="#2b3a4a">• 登录：账号密码 / 微信（code2session，凭据缺失降级），不泄露账号</text>
-    <text x="50" y="144" font-size="12.5" fill="#2b3a4a">• 令牌：JWT 双令牌，token_version 吊销（logout / 改密 / 换绑）；RBAC</text>
+    <text x="50" y="144" font-size="12.5" fill="#2b3a4a">• 令牌：JWT access/refresh 类型隔离，token_version 吊销；Bearer + RBAC</text>
   </g>
 
   <!-- ===================== 2. 商品 ===================== -->
@@ -27,9 +27,9 @@
     <rect x="510" y="52" width="460" height="30" rx="10" fill="#2e7048"/>
     <rect x="510" y="72" width="460" height="10" fill="#2e7048"/>
     <text x="740" y="72" text-anchor="middle" font-size="14" fill="#fff" font-weight="600">② 保险商品</text>
-    <text x="530" y="104" font-size="12.5" fill="#2b3a4a">• 列表：分页 / 状态过滤（ON_SALE · OFF_SHELF · 软删）/ 精选位</text>
-    <text x="530" y="124" font-size="12.5" fill="#2b3a4a">• 详情：单商品查询；关联条款（insurance_product_clause）阅读</text>
-    <text x="530" y="144" font-size="12.5" fill="#2b3a4a">• 管理：运营后台建档 / 上架 / 下架 / 停售（OPERATOR · ADMIN）</text>
+    <text x="530" y="104" font-size="12.5" fill="#2b3a4a">• 公开列表：分页 / 仅 ON_SALE / 精选位；运营按状态查询</text>
+    <text x="530" y="124" font-size="12.5" fill="#2b3a4a">• 公开详情 / 条款仅 ON_SALE；运营可读草稿与下架商品</text>
+    <text x="530" y="144" font-size="12.5" fill="#2b3a4a">• 运营：商品列表（按状态）/ 建档 / 上架 / 下架 / 停售</text>
   </g>
 
   <!-- ===================== 3. 搜索 ===================== -->
@@ -38,9 +38,9 @@
     <rect x="30" y="176" width="460" height="30" rx="10" fill="#643a94"/>
     <rect x="30" y="196" width="460" height="10" fill="#643a94"/>
     <text x="260" y="196" text-anchor="middle" font-size="14" fill="#fff" font-weight="600">③ 全文搜索</text>
-    <text x="50" y="228" font-size="12.5" fill="#2b3a4a">• 当前：MySQL LIKE 搜索（search_service，分页保护）</text>
-    <text x="50" y="248" font-size="12.5" fill="#2b3a4a">• MySQL LIKE 搜索（分页保护）</text>
-    <text x="50" y="268" font-size="12.5" fill="#2b3a4a">• 降级路径：索引未就绪自动回退 LIKE，不阻塞业务</text>
+    <text x="50" y="228" font-size="12.5" fill="#2b3a4a">• MySQL LIKE：ON_SALE + search_enabled；查询参数百分号解码</text>
+    <text x="50" y="248" font-size="12.5" fill="#2b3a4a">• LIKE 元字符转义；COUNT(*) OVER() + 空页 COUNT 回退</text>
+    <text x="50" y="268" font-size="12.5" fill="#2b3a4a">• 公开搜索不返回草稿 / 下架商品；无外部索引依赖</text>
   </g>
 
   <!-- ===================== 4. 交易闭环 ===================== -->
@@ -49,9 +49,9 @@
     <rect x="510" y="176" width="460" height="30" rx="10" fill="#8a6420"/>
     <rect x="510" y="196" width="460" height="10" fill="#8a6420"/>
     <text x="740" y="196" text-anchor="middle" font-size="14" fill="#fff" font-weight="600">④ 报价 · 订单 · 支付</text>
-    <text x="530" y="228" font-size="12.5" fill="#2b3a4a">• 费率表报价：quote_rates 命中优先，未命中回退请求保费</text>
-    <text x="530" y="248" font-size="12.5" fill="#2b3a4a">• 订单 → 支付逐级依赖事务闭环；微信渠道 Mock（预下单 + 回调验签）</text>
-    <text x="530" y="268" font-size="12.5" fill="#2b3a4a">• 路由已挂载：build_bee_router()（38 个业务端点）</text>
+    <text x="530" y="228" font-size="12.5" fill="#2b3a4a">• 报价：quote_rates 必须命中；保费 = 保额 × 费率（服务端计算）</text>
+    <text x="530" y="248" font-size="12.5" fill="#2b3a4a">• 订单：优惠恒为 0；报价锁单转换；支付回调 X-Callback-Token + PAID 原子</text>
+    <text x="530" y="268" font-size="12.5" fill="#2b3a4a">• 路由：41 个业务端点；保单签发 / 退保、运营商品列表</text>
   </g>
 
   <!-- ===================== 5. 保单 · 契约 ===================== -->
@@ -60,9 +60,9 @@
     <rect x="30" y="300" width="460" height="30" rx="10" fill="#963b3b"/>
     <rect x="30" y="320" width="460" height="10" fill="#963b3b"/>
     <text x="260" y="320" text-anchor="middle" font-size="14" fill="#fff" font-weight="600">⑤ 保单 · 契约</text>
-    <text x="50" y="352" font-size="12.5" fill="#2b3a4a">• 保单签发 / 详情；受益人批改（POLICY_ENDORSE 审计留痕）</text>
+    <text x="50" y="352" font-size="12.5" fill="#2b3a4a">• 保单签发（幂等）/ 退保 / 受益人批改；续保暂未开放</text>
     <text x="50" y="372" font-size="12.5" fill="#2b3a4a">• 电子合同：内联 Mock 签署 / 签署回调 / 合同落库</text>
-    <text x="50" y="392" font-size="12.5" fill="#2b3a4a">• 签约人签名记录</text>
+    <text x="50" y="392" font-size="12.5" fill="#2b3a4a">• 合同详情 / 签署 URL 按保单归属校验</text>
   </g>
 
   <!-- ===================== 6. 理赔 · 运营 · 审计 ===================== -->
@@ -71,9 +71,9 @@
     <rect x="510" y="300" width="460" height="30" rx="10" fill="#2f4f74"/>
     <rect x="510" y="320" width="460" height="10" fill="#2f4f74"/>
     <text x="740" y="320" text-anchor="middle" font-size="14" fill="#fff" font-weight="600">⑥ 理赔 · 运营 · 审计</text>
-    <text x="530" y="352" font-size="12.5" fill="#2b3a4a">• 理赔：报案 / 我的理赔 / 审核（APPROVE · REJECT）/ 资料上传列表</text>
-    <text x="530" y="372" font-size="12.5" fill="#2b3a4a">• 运营：商品建档 / 上下架后台 API（OPERATOR · ADMIN 已挂载）</text>
-    <text x="530" y="392" font-size="12.5" fill="#2b3a4a">• 审计：audit_logs 全量留痕 + 查询 API（/api/v1/admin/audit-logs）</text>
+    <text x="530" y="352" font-size="12.5" fill="#2b3a4a">• 理赔：报案 / 我的理赔 / 审核（金额与保障期校验；并发守卫）</text>
+    <text x="530" y="372" font-size="12.5" fill="#2b3a4a">• 运营：商品列表（按状态）/ 建档 / 上下架（OPERATOR · ADMIN）</text>
+    <text x="530" y="392" font-size="12.5" fill="#2b3a4a">• 审计：audit_logs 全量留痕 + trace_id + 查询 API</text>
   </g>
 
   <!-- ===================== 7. 横切与质量 ===================== -->
@@ -82,10 +82,10 @@
     <rect x="30" y="424" width="940" height="30" rx="10" fill="#1f2d3d"/>
     <rect x="30" y="444" width="940" height="10" fill="#1f2d3d"/>
     <text x="500" y="444" text-anchor="middle" font-size="14" fill="#fff" font-weight="600">⑦ 横切能力</text>
-    <text x="50" y="472" font-size="12.5" fill="#2b3a4a">安全：SecurityFilter 入站扫描 · 参数化查询防注入 · AES-256-GCM 敏感字段 · argon2 口令哈希 · 令牌精确过期（leeway=0）</text>
-    <text x="50" y="490" font-size="12.5" fill="#2b3a4a">可观测：Trace 过滤器生成 trace_id，贯穿 RequestCtx；统一响应信封（code / message / data，业务错误 40000）</text>
-    <text x="50" y="508" font-size="12.5" fill="#2b3a4a">服务仅提供 JSON 接口；未匹配路径返回统一 404 信封</text>
-    <text x="50" y="526" font-size="12.5" fill="#2b3a4a">质量：单元测试 26 项 + 集成测试 115 项（集成需 MySQL，未配置则失败）覆盖认证 / 商品 / 搜索 / 交易 / 理赔 / 审计；主键 snowflake</text>
+    <text x="50" y="472" font-size="11.5" fill="#2b3a4a">安全：Trace → 限流（对端 IP）→ JWT/RBAC；参数化查询；AES-GCM；argon2；令牌精确过期</text>
+    <text x="50" y="490" font-size="11.5" fill="#2b3a4a">可观测：每请求 trace_id + X-Trace-Id；DB/内部错误统一 50000（细节只进日志）</text>
+    <text x="50" y="508" font-size="11.5" fill="#2b3a4a">服务仅提供 JSON 接口；未匹配路径返回统一 404 信封</text>
+    <text x="50" y="526" font-size="11.5" fill="#2b3a4a">质量：50 个测试（44 单元 + 6 集成；4 个 DB 用例需 TEST_DATABASE_URL）；主键 snowflake</text>
   </g>
 
   <text x="972" y="552" text-anchor="end" font-size="22" font-weight="600" fill="#8ea0b5" fill-opacity="0.45" transform="rotate(-12 900 548)">https://erik.xyz</text>

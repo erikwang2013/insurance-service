@@ -1,5 +1,6 @@
 # 保险服务平台 — 微信小程序端 & 鸿蒙端架构规划
 
+> 版本: v1.11.0（对齐后端 v1.11.0） | 日期: 2026-10-30
 > 适用对象：原生微信小程序（WXML/WXSS + JS）与鸿蒙（ArkTS + ArkUI）端。
 > 三端（Flutter / 小程序 / 鸿蒙）共用同一 `bee-rust` REST API，通过 `X-Client-Platform` 请求头区分来源。
 
@@ -53,7 +54,7 @@ miniprogram/
     │   └── detail/             # 订单详情（金额、状态、支付入口）
     ├── policy/
     │   ├── list/               # 保单列表（有效/待生效/已失效）
-    │   └── detail/             # 保单详情（保障内容、PDF、续保）
+    │   └── detail/             # 保单详情（保障内容、PDF；续保暂未开放）
     ├── contract/
     │   ├── list/               # 待签署/已签署合同列表
     │   └── sign/               # 合同签署页（条款阅读、签署、结果）
@@ -74,24 +75,24 @@ miniprogram/
 | 产品列表 | `/pages/product/list/index` | 分类 Tab、价格/热度/保障筛选、分页加载、产品卡片 |
 | 产品详情 | `/pages/product/detail/index` | 保障责任、投保示例、条款说明（WebView 跳条款 H5）、「立即投保」CTA 按钮 |
 | 投保填写 | `/pages/quote/index/index` | 投保人/被保人信息、受益人设置、保额保期选择（quote-stepper）、健康告知问答、保费试算 |
-| 投保确认 | `/pages/quote/confirm/index` | 复核信息、试算保费展示、勾选并阅读投保须知/免责条款、提交投保 |
+| 投保确认 | `/pages/quote/confirm/index` | 复核信息、展示服务端计算的保费（客户端不提交 premium）、勾选并阅读投保须知/免责条款、提交投保 |
 | 投保结果 | `/pages/quote/result/index` | 展示 quote_id、提示待支付/审核中、跳转订单或支付 |
 | 订单列表 | `/pages/order/list/index` | 按状态 Tab（待支付/已支付/已取消/进行中）、订单卡片、去支付按钮 |
-| 订单详情 | `/pages/order/detail/index` | 订单状态流转、金额明细、支付入口、关联保单/合同入口 |
+| 订单详情 | `/pages/order/detail/index` | 订单状态流转、金额明细（优惠恒 0，实付 = 报价保费）、支付入口、关联保单/合同入口 |
 | 保单列表 | `/pages/policy/list/index` | 有效/待生效/已失效筛选、保单卡片 |
-| 保单详情 | `/pages/policy/detail/index` | 保障内容、PDF 保单（webview 预览）、续保/理赔入口 |
+| 保单详情 | `/pages/policy/detail/index` | 保障内容、保单数据（PDF 为规划项）、退保（`POST /policies/{id}/lapse`）/理赔入口；续保暂未开放 |
 | 合同列表 | `/pages/contract/list/index` | 待签署/已签署、到期提醒 |
 | 合同签署 | `/pages/contract/sign/index` | 条款逐段阅读（阅读计时）、电子签名、确认签署、结果页（落款+防篡改摘要） |
 | 我的 | `/pages/mine/index` | 用户信息卡片、我的保单/订单/合同/实名、设置、退出登录 |
 | 登录 | `/pages/login/index` | 微信一键登录、绑定手机号（getPhoneNumber） |
-| 搜索 | `/pages/search/index` | 热搜、历史、结果列表（对接 /search） |
+| 搜索 | `/pages/search/index` | 热搜、历史、结果列表（对接 `GET /search?keyword=&type=&page=&size=`，仅返回 ON_SALE） |
 | 通用 WebView | `/pages/webview/index` | 条款 H5、PDF 保单、客服链接（白名单域名） |
 
 **页面间关键流转（保险闭环）**：
 ```
-首页 → 产品详情 → 投保填写 → 投保确认 → 提交 quote
-     → 投保结果 → 生成 order → 微信支付 → 支付回调
-     → 保单生成 → 保单详情 → 合同签署 → 签署完成（PDF 落款）
+首页 → 产品详情 → 投保填写 → 投保确认 → 提交 quote（保费由服务端计算）
+     → 投保结果 → 生成 order（优惠恒 0）→ 预支付 → 支付 → 支付回调（服务端）
+     → 订单 PAID → POST /policies {order_id} 签发保单 → 保单详情 → 合同签署 → 签署完成（PDF 落款）
 ```
 
 ### 1.3 登录流程设计（wx.login → code2session → openid 直登 / 绑定微信 → JWT）
@@ -121,7 +122,8 @@ miniprogram/
 - `code` 为一次性，**绝不在客户端缓存**；每次登录都重新 `wx.login`。
 - 会话密钥 `session_key` 只留在后端，客户端永不接触，降低数据解密面。
 - JWT 存储：短 Token 存 `wx.setStorageSync`（内存 + 本地），或用更安全方案（见第六章端侧安全）。
-- 401 处理：请求拦截器收到 `code=401`（或 `code=UNAUTHORIZED`）时，静默重新走登录流程，成功后重放原请求（重放队列，避免并发重复登录）。
+- 401 处理：请求拦截器收到 HTTP 401 / 信封业务码 `40100` 时，静默刷新 access token（refresh 失败则重走登录流程），
+  成功后重放原请求（重放队列，避免并发重复登录）。
 - 登出：`POST /api/v1/auth/logout`（后端 users.token_version+1，旧 refresh token 立即失效）→ 清空本地 token → 回登录页。
 
 ### 1.4 微信支付流程（统一下单 → wx.requestPayment）
@@ -129,12 +131,14 @@ miniprogram/
 ```
 用户点「去支付」
   │
-  1. 前端 POST /api/v1/payments/wechat/prepay { orderId }  （带 JWT）
-  2. 后端校验订单归属+状态，调微信【统一下单/JSAPI下单】，
-     返回支付参数 { timeStamp, nonceStr, package(prepay_id), signType, paySign, ... }
+  1. 前端 POST /api/v1/payments/wechat/prepay { order_id }  （带 Bearer access token）
+  2. 后端校验订单归属+状态；本阶段 provider 为 MOCK，返回 Mock 支付参数
+     （真实微信【统一下单/JSAPI下单】为规划项，参数形态为
+      { timeStamp, nonceStr, package(prepay_id), signType, paySign, ... }）
   3. 前端调用 wx.requestPayment({ timeStamp, nonceStr, package, signType, paySign, success, fail })
   4. 支付结果处理：
-       ├─ success → 后端回调确认 → 前端轮询 GET /api/v1/orders/{id} 刷新为已支付
+       ├─ success → 支付回调由服务端处理（回调方携带 X-Callback-Token）→ 前端轮询
+       │            GET /api/v1/orders/{id} 刷新为 PAID → 调 POST /api/v1/policies { order_id } 签发保单
        │          → 进入保单/合同流程
        ├─ fail (cancel) → 留在订单页，展示待支付，不误判为失败
        └─ 状态不明 → 主动调后端查询订单状态兜底（防丢单）
@@ -143,7 +147,8 @@ miniprogram/
 **要点**：
 - **签名参数 paySign 由后端生成**，前端不接触商户密钥；`package` 中 prepay_id 由后端在 prepay 响应返回。
 - 支付成功判定**以后端回调 + 订单查询为准**，不依赖 wx.requestPayment 的 success 回调（可能因网络中断返回 fail 但实际已扣款）。
-- 金额一律后端计算，前端只展示，杜绝价格篡改。
+- 回调是服务端到服务端：`X-Callback-Token` 只由回调方发送，客户端不接触。
+- 金额一律后端计算（报价保费 = 保额 × 费率，订单优惠恒 0），前端只展示，杜绝价格篡改。
 - 支付前需在微信公众平台配置 `requestPayment` 支付目录与回调域名。
 
 ### 1.5 网络请求封装（utils/request.js）
@@ -288,7 +293,7 @@ harmony/
 | QuoteConfirmPage.ets | 投保确认 | 信息复核 `List`、免责条款 `Web`、`Checkbox` 勾选、提交 |
 | QuoteResultPage.ets | 投保结果 | 状态展示、跳支付/回订单 |
 | OrderListPage.ets / OrderDetailPage.ets | 订单 | 状态 Tab、金额明细、支付入口 |
-| PolicyListPage.ets / PolicyDetailPage.ets | 保单 | 保单卡片、PDF 预览（`Web`/文件）、续保 |
+| PolicyListPage.ets / PolicyDetailPage.ets | 保单 | 保单卡片、PDF 预览（`Web`/文件）、退保；续保暂未开放 |
 | ContractListPage.ets / ContractSignPage.ets | 合同 | 条款阅读、电子签名（Canvas 手写/图片）、确认签署、防篡改摘要展示 |
 | MinePage.ets | 我的 | 用户卡片、服务入口 `Grid`、设置 |
 | LoginPage.ets | 登录 | 账号/手机号登录、`Button` 登录 |
@@ -328,30 +333,33 @@ HttpUtil.request(options)
 
 ### 2.4 登录 / 支付能力对接（@ohos 相关能力）
 
-**登录（手机号 + 验证码）**：
+**登录（手机号 + 验证码，规划）**：
 ```
 LoginPage → 输入手机号 → 请求短信验证码（@ohos 网络）
   → 后端 POST /api/v1/auth/sms-code
   → 输入验证码 → POST /api/v1/auth/login { phone, code, platform:'harmony' }
   → 后端校验并签发 JWT → AuthManager 安全存储 → 进入业务
 ```
+> 当前后端 `POST /api/v1/auth/login` 为用户名 + 密码；短信验证码登录为规划项。
+> 登录后所有受保护请求使用 `Authorization: Bearer <access token>`，身份由令牌派生，
+> 不传 `user_id` / `operator_user_id`。
 - 与小程序差异：无 `wx.login` 静默能力，需显式登录；Token 通过 `@ohos.security` 安全存储（见第六章）。
 - 可选增强：接入 `@ohos.account` 系统账号（如 HarmonyOS 帐号体系）作为登录方式，但核心仍是手机号+验证码以保持三端一致。
 
 **支付**：
 ```
 OrderDetailPage → 点「去支付」
-  → 后端 POST /api/v1/payments/{channel}/prepay { orderId, platform:'harmony' }
-  → 后端返回收银台/支付 SDK 所需的支付参数（渠道标识：支付宝/银联/华为支付等）
+  → 后端 POST /api/v1/payments/{order_id}/prepay { channel }（带 Bearer access token）
+  → 后端返回收银台/支付 SDK 所需的支付参数（渠道白名单 WECHAT/ALIPAY/UNIONPAY/BALANCE/MOCK；本阶段恒为 MOCK）
   → 前端调用对应支付 SDK（鸿蒙支付服务 / 第三方 SDK）拉起收银台
   → 回调结果 → 以后端订单查询为准兜底 → 刷新订单状态
 ```
-- 后端根据 `X-Client-Platform: harmony` + `channel` 参数返回相应支付渠道的预支付参数。
+- 真实渠道（华为支付 / 支付宝 / 银联）为规划项；渠道由请求体 `channel` 指定，不放在路径中。
 - 鸿蒙端通过 `module.json5` 声明所需权限与 SDK 依赖（`oh-package.json5` 引入支付 SDK）。
 - 敏感操作（支付/签署）可要求二次验证（生物识别/系统指纹，`@ohos.biometrics`）。
 
 **其它端侧能力**：
-- 通知：`@ohos.notificationManager` 推送保单生效、续保、签署提醒。
+- 通知：`@ohos.notificationManager` 推送保单生效、保全、签署提醒（续保暂未开放）。
 - 网络权限：`module.json5` 声明 `ohos.permission.INTERNET`；正式包需配置 `useNormalizedOHMUrl` 与域名校验。
 - PDF/文件：`@ohos.file.fs` 存储保单 PDF，`@ohos.pasteboard` 处理签署内容粘贴。
 
@@ -375,10 +383,12 @@ OrderDetailPage → 点「去支付」
 
 1. **统一响应信封**：所有接口返回 `ResponseEnvelope { code, message, data, trace_id }`。三端解析逻辑一致，仅语言/类型机制不同。
 2. **错误码规范**：`code` 为业务层约定（0/SUCCESS、40100 未登录、40300 越权、40900 冲突等）。HTTP 状态码仅表达传输层结果，业务以 `code` 为准。
-3. **金额精度**：金额一律以**分（int64）**传输（`amount` 单位分），三端各自负责格式化展示，避免浮点误差。
+3. **金额精度**：金额以**元**为单位、`DECIMAL(14,2)` 精度传输（JSON 中为十进制字符串 / 数值），三端各自负责格式化展示，避免浮点误差。
 4. **时间格式**：统一 `ISO 8601`（如 `2026-09-01T10:00:00+08:00`），或服务端返回 UTC 时间戳由端侧本地化。
 5. **枚举语义**：订单/保单/合同状态、支付渠道、平台标识均用**稳定字符串枚举**（如 `order.status = "PENDING"|"PAID"|"CANCELLED"`），端侧建立映射表展示中文文案，禁止硬编码展示端变化无常。
-6. **分页契约**：列表接口统一 `{ page, pageSize }` 入参，响应 `{ items, total, page, pageSize }`；三端分页逻辑一致。
+6. **分页契约**：列表接口统一 `page` / `size` 入参（默认 1 / 20）；订单 / 保单 / 理赔 / 审计响应
+   `{ list, page, size }`，搜索响应 `{ hits, total, page, size }`，公开商品列表直接返回数组；
+   三端分页逻辑一致。
 7. **Idempotency**：投保/支付等写操作支持 `Idempotency-Key`（或客户端生成 requestId），防止重复提交产生重复订单。
 8. **版本兼容**：后端接口采用 `/api/v1` 前缀版本化；端侧 `X-Client-Version` 用于服务端做向后兼容与强更提示。
 
@@ -396,17 +406,18 @@ OrderDetailPage → 点「去支付」
 | 推送 | FCM/厂商 | 订阅消息 | @ohos.notificationManager |
 | 平台头值 | `flutter` | `miniprogram` | `harmony` |
 
-**后端需提供的差异化能力（配合 X-Client-Platform）**：
-- `/auth/wechat/login` 仅对 `miniprogram` 开放；`/auth/login` 对 flutter/harmony 开放。
-- `/payments/*/prepay` 根据平台返回不同支付渠道参数（wechat / alipay / unionpay / huawei-pay）。
+**后端差异化能力（规划）**：
+- `/auth/wechat/login` 面向 `miniprogram`；`/auth/login` 对 flutter/harmony 开放（当前后端未强制校验平台）。
+- `/api/v1/payments/{order_id}/prepay` 由请求体 `channel` 选择渠道；本阶段统一为 MOCK，
+  真实渠道参数（wechat / alipay / unionpay / huawei-pay）为规划项。
 - 相同业务域（products/quotes/orders/policies/contracts/search）三端完全共用，仅在登录/支付两个能力上分流。
 
 ### 3.4 三端共用的数据流（保险闭环）
 
 ```
-产品浏览(/products) → 投保试算(/quotes POST) → 订单生成(/orders POST)
-  → 支付(/payments prepay + 回调) → 保单生成(/policies)
-  → 合同签署(/contracts 创建+签署) → 保单/合同查看(PDF)
+产品浏览(/products) → 投保试算(/quotes POST，服务端计费) → 订单生成(/orders POST，优惠恒 0)
+  → 支付(/payments/{order_id}/prepay + 服务端回调) → 保单签发(POST /policies {order_id})
+  → 合同签署(/contracts/{id}/sign) → 保单/合同查看(PDF 为规划项)
 ```
 三个端在此闭环上完全一致，仅在「登录」与「支付」两处平台化差异。
 
@@ -426,8 +437,10 @@ OrderDetailPage → 点「去支付」
 
 ### 4.2 JWT 防泄漏
 
-- **短过期 + 刷新**：访问令牌短时效（如 15~30 分钟），配合刷新令牌续期；过期自动静默刷新（不打扰用户）。
-- **仅内存承载**（鸿蒙/Flutter 可做）：访问令牌存内存单例，冷启动从安全存储恢复；小程序受限于 API 用 `wx.setStorageSync`，但结合后端 `jti` 校验 + 过期即弃降低风险窗口。
+- **短过期 + 刷新**：访问令牌短时效（后端 `JWT_ACCESS_EXPIRY` 默认 7200 秒），配合刷新令牌
+  （`JWT_REFRESH_EXPIRY` 默认 604800 秒）续期；过期自动静默刷新（不打扰用户）。
+- **仅内存承载**（鸿蒙/Flutter 可做）：访问令牌存内存单例，冷启动从安全存储恢复；小程序受限于 API 用 `wx.setStorageSync`，
+  但结合后端 `token_version` 吊销 + 过期即弃降低风险窗口。
 - **不写入日志/埋点**：任何日志、上报、trace 均不落 `Authorization` 与完整 token。
 - **Header 传输**：仅经 HTTPS（`request` 强制 https）；小程序 `request` 合法域名配置仅放生产域名。
 - **防重放/CSRF**：`X-Request-Id` + 后端校验来源平台与设备指纹；关键操作（支付/签署）要求二次验证。
@@ -435,8 +448,9 @@ OrderDetailPage → 点「去支付」
 
 ### 4.3 越权防护（业务层）
 
-- **对象级鉴权**：所有资源接口（订单/保单/合同详情）由后端按 `user_id` 校验归属，客户端不依赖前端隐藏按钮来防越权。
-- **水平越权**：禁止仅凭 `id` 可访问他人资源；后端必须校验 `resource.user_id === token.user_id`。
+- **对象级鉴权**：所有资源接口（订单/保单/合同详情）由后端按**令牌中的用户身份**校验归属，
+  客户端不传 `user_id` / `operator_user_id`，也不依赖前端隐藏按钮来防越权。
+- **水平越权**：禁止仅凭 `id` 可访问他人资源；后端校验资源归属与令牌用户一致。
 - **垂直越权**：角色权限（投保人/受益人/管理员）由后端 `role` 判定，前端仅做 UI 级隐藏。
 - **签名/摘要防篡改**：
   - 投保/支付金额后端权威计算，前端只展示。

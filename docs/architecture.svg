@@ -11,7 +11,7 @@
   </defs>
   <rect x="0" y="0" width="1000" height="700" fill="url(#bg)" rx="12"/>
 
-  <text x="500" y="26" text-anchor="middle" font-size="20" font-weight="700" fill="#1f2d3d">保险服务平台 · 后端系统架构（bee-rust 阶段 0 → 1）</text>
+  <text x="500" y="26" text-anchor="middle" font-size="20" font-weight="700" fill="#1f2d3d">保险服务平台 · 后端系统架构（v1.11.0）</text>
 
   <!-- ===================== 1. 客户端 ===================== -->
   <g>
@@ -50,22 +50,22 @@
   <g>
     <rect x="20" y="178" width="112" height="52" rx="8" fill="#4a6785"/>
     <text x="76" y="203" text-anchor="middle" font-size="12" fill="#fff" font-weight="600">中间件</text>
-    <text x="76" y="220" text-anchor="middle" font-size="11" fill="#dce6f0">过滤器链</text>
+    <text x="76" y="220" text-anchor="middle" font-size="11" fill="#dce6f0">axum 中间件链</text>
     <rect x="150" y="178" width="176" height="52" rx="8" fill="#fdf3e3" stroke="#e0b36a"/>
-    <text x="238" y="203" text-anchor="middle" font-size="13" fill="#8a6420" font-weight="600">SecurityFilter</text>
-    <text x="238" y="220" text-anchor="middle" font-size="11" fill="#a8863f">安全扫描</text>
+    <text x="238" y="203" text-anchor="middle" font-size="13" fill="#8a6420" font-weight="600">Trace</text>
+    <text x="238" y="220" text-anchor="middle" font-size="11" fill="#a8863f">trace_id · X-Trace-Id</text>
     <line x1="334" y1="204" x2="356" y2="204" stroke="#93a0b4" stroke-width="2" marker-end="url(#arrow)"/>
     <rect x="366" y="178" width="176" height="52" rx="8" fill="#fdf3e3" stroke="#e0b36a"/>
-    <text x="454" y="203" text-anchor="middle" font-size="13" fill="#8a6420" font-weight="600">Trace</text>
-    <text x="454" y="220" text-anchor="middle" font-size="11" fill="#a8863f">链路追踪 trace_id</text>
+    <text x="454" y="203" text-anchor="middle" font-size="13" fill="#8a6420" font-weight="600">RateLimit</text>
+    <text x="454" y="220" text-anchor="middle" font-size="11" fill="#a8863f">300/60s · 对端 IP</text>
     <line x1="550" y1="204" x2="572" y2="204" stroke="#93a0b4" stroke-width="2" marker-end="url(#arrow)"/>
     <rect x="582" y="178" width="176" height="52" rx="8" fill="#fdf3e3" stroke="#e0b36a"/>
-    <text x="670" y="203" text-anchor="middle" font-size="13" fill="#8a6420" font-weight="600">JWT 认证</text>
-    <text x="670" y="220" text-anchor="middle" font-size="11" fill="#a8863f">RBAC 角色鉴权</text>
+    <text x="670" y="203" text-anchor="middle" font-size="13" fill="#8a6420" font-weight="600">JWT 认证/RBAC</text>
+    <text x="670" y="220" text-anchor="middle" font-size="11" fill="#a8863f">Bearer · access/refresh</text>
     <line x1="766" y1="204" x2="788" y2="204" stroke="#93a0b4" stroke-width="2" marker-end="url(#arrow)"/>
     <rect x="798" y="178" width="180" height="52" rx="8" fill="#fdf3e3" stroke="#e0b36a"/>
     <text x="888" y="203" text-anchor="middle" font-size="13" fill="#8a6420" font-weight="600">Controller 分派</text>
-    <text x="888" y="220" text-anchor="middle" font-size="11" fill="#a8863f">bee 管线上下文</text>
+    <text x="888" y="220" text-anchor="middle" font-size="11" fill="#a8863f">401/403/429 统一信封</text>
   </g>
 
   <!-- ===================== 4. 控制器层 ===================== -->
@@ -83,8 +83,8 @@
     <text x="669" y="271" text-anchor="middle" font-size="13" fill="#2e7048" font-weight="600">SearchController</text>
     <text x="669" y="288" text-anchor="middle" font-size="11" fill="#5d9475">搜索请求</text>
     <rect x="780" y="246" width="198" height="52" rx="8" fill="#e8f5ec" stroke="#7fc39a"/>
-    <text x="879" y="271" text-anchor="middle" font-size="13" fill="#2e7048" font-weight="600">公共基础设施</text>
-    <text x="879" y="288" text-anchor="middle" font-size="11" fill="#5d9475">会话缓存 · 模板 · 信封</text>
+    <text x="879" y="271" text-anchor="middle" font-size="13" fill="#2e7048" font-weight="600">AdminController</text>
+    <text x="879" y="288" text-anchor="middle" font-size="11" fill="#5d9475">运营商品 · 审计查询</text>
   </g>
 
   <!-- ===================== 5. 服务层 ===================== -->
@@ -100,10 +100,10 @@
     <text x="459" y="356" text-anchor="middle" font-size="11" fill="#8a6cb6">商品列表 · 详情</text>
     <rect x="570" y="314" width="198" height="52" rx="8" fill="#f1e8fa" stroke="#b493e0"/>
     <text x="669" y="339" text-anchor="middle" font-size="13" fill="#643a94" font-weight="600">search_service</text>
-    <text x="669" y="356" text-anchor="middle" font-size="11" fill="#8a6cb6">搜索（LIKE 降级）</text>
+    <text x="669" y="356" text-anchor="middle" font-size="11" fill="#8a6cb6">搜索（LIKE · ON_SALE）</text>
     <rect x="780" y="314" width="198" height="52" rx="8" fill="#f1e8fa" stroke="#b493e0"/>
     <text x="879" y="339" text-anchor="middle" font-size="13" fill="#643a94" font-weight="600">业务扩展</text>
-    <text x="879" y="356" text-anchor="middle" font-size="11" fill="#8a6cb6">报价 · 订单 · 支付 · 保单 · 签约 · 理赔</text>
+    <text x="879" y="356" text-anchor="middle" font-size="9.8" fill="#8a6cb6">报价·订单·支付·保单·合同·理赔</text>
   </g>
 
   <!-- ===================== 6. 外部渠道（未接入） ===================== -->
@@ -122,7 +122,7 @@
     <text x="669" y="424" text-anchor="middle" font-size="11" fill="#b06b6b">Mock 签署 · 回调验签</text>
     <rect x="780" y="382" width="198" height="52" rx="8" fill="#fff6f6" stroke="#e3a3a3"/>
     <text x="879" y="407" text-anchor="middle" font-size="13" fill="#963b3b" font-weight="600">Mock 模拟</text>
-    <text x="879" y="424" text-anchor="middle" font-size="11" fill="#b06b6b">本地开发 / 测试</text>
+    <text x="879" y="424" text-anchor="middle" font-size="11" fill="#b06b6b">X-Callback-Token · 测试</text>
   </g>
 
   <!-- ===================== 7. 数据访问层 ===================== -->
@@ -147,16 +147,16 @@
     <rect x="402" y="518" width="240" height="64" rx="8" fill="#fff" stroke="#b9c6d6"/>
     <text x="522" y="540" text-anchor="middle" font-size="13" fill="#2b3a4a" font-weight="600">内存缓存</text>
     <text x="522" y="556" text-anchor="middle" font-size="11" fill="#7b8ba0">会话缓存 bee_cache</text>
-    <text x="522" y="571" text-anchor="middle" font-size="11" fill="#7b8ba0">（阶段 0 内存缓存暂代）</text>
+    <text x="522" y="571" text-anchor="middle" font-size="11" fill="#7b8ba0">限流（进程内固定窗口）</text>
     <rect x="654" y="518" width="324" height="64" rx="8" fill="#fff" stroke="#b9c6d6"/>
-    <text x="816" y="540" text-anchor="middle" font-size="13" fill="#2b3a4a" font-weight="600">MySQL LIKE 搜索</text>
-    <text x="816" y="556" text-anchor="middle" font-size="11" fill="#7b8ba0">MySQL LIKE 搜索</text>
-    <text x="816" y="571" text-anchor="middle" font-size="11" fill="#7b8ba0">分页保护，无外部索引依赖</text>
+    <text x="816" y="540" text-anchor="middle" font-size="13" fill="#2b3a4a" font-weight="600">搜索与限流</text>
+    <text x="816" y="556" text-anchor="middle" font-size="11" fill="#7b8ba0">LIKE 转义 · ON_SALE · 窗口计数</text>
+    <text x="816" y="571" text-anchor="middle" font-size="11" fill="#7b8ba0">300/60s · 对端 IP · 无 XFF</text>
   </g>
 
   <!-- 说明文字 -->
-  <text x="20" y="610" font-size="11.5" fill="#5f6f82">说明：认证 / 商品 / 搜索 / 报价 / 订单 / 支付 / 保单 / 签约 / 理赔 / 运营 / 审计 路由与控制器均已挂载（数据驱动路由表共 39 业务端点）；</text>
-  <text x="20" y="628" font-size="11.5" fill="#5f6f82">支付 / 电子签当前为内联 Mock 实现；微信 / 支付宝 / 易签等外部渠道未接入；微信登录 code2session 已配置化；业务主键由 snowflake（idgen_rs）生成。</text>
+  <text x="20" y="610" font-size="11.5" fill="#5f6f82">说明：认证 / 商品 / 搜索 / 报价 / 订单 / 支付 / 保单 / 签约 / 理赔 / 运营 / 审计 路由与控制器均已挂载（数据驱动路由表共 41 业务端点）；</text>
+  <text x="20" y="628" font-size="11.5" fill="#5f6f82">支付 / 电子签当前为内联 Mock 实现；支付回调须携带 X-Callback-Token；报价须配置 quote_rates；续保暂未开放；业务主键由 snowflake（idgen_rs）生成。</text>
 
   <!-- 水印 -->
   <text x="972" y="672" text-anchor="end" font-size="22" font-weight="600" fill="#8ea0b5" fill-opacity="0.45" transform="rotate(-12 900 680)">https://erik.xyz</text>

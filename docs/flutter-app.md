@@ -1,6 +1,6 @@
 # 保险服务平台 — Flutter 客户端架构规划
 
-> 版本: v1.0 | 日期: 2026-09-01 | 状态: 待评审
+> 版本: v1.11.0（对齐后端 v1.11.0） | 日期: 2026-10-30 | 状态: 待评审
 > 适用端: iOS / Android / Web / 桌面(macOS / Windows / Linux)
 > 关联后端: `bee-rust`(Rust REST API, JWT 认证, 统一响应 `ResponseEnvelope`)
 > 说明: 原生微信小程序与鸿蒙 ArkTS 端共用同一 REST API,本规划仅覆盖 Flutter 客户端。
@@ -244,8 +244,9 @@ final dio = Dio(
 
 **拦截器职责(详 §6):**
 
-1. **AuthInterceptor**: 从 `TokenStorage` 取 accessToken,`request` 阶段注入 `Authorization: Bearer <token>`。
-2. **TokenRefreshInterceptor**: `onError` 捕获 401/业务码 401(unauthenticated),加锁并发去重刷新(RefreshToken换新AccessToken),失败则登出跳登录。
+1. **AuthInterceptor**: 从 `TokenStorage` 取 accessToken,`request` 阶段注入 `Authorization: Bearer <access token>`。
+   受保护接口的请求者身份由后端令牌派生,客户端**不要**在请求体或查询参数传 `user_id` / `operator_user_id`。
+2. **TokenRefreshInterceptor**: `onError` 捕获 HTTP 401(信封业务码 `40100`),加锁并发去重刷新(RefreshToken 换新 AccessToken),失败则登出跳登录。
 3. **ErrorInterceptor**: 解析 `ResponseEnvelope`,`code != 0` 时抛出 `BizException(code, message, trace_id)`;网络/超时抛 `NetworkException`。
 4. **LoggingInterceptor**: 打印方法/路径/耗时/状态码/`trace_id`,便于与后端错误链路对齐。
 
@@ -294,40 +295,49 @@ class ApiClient {
 
 - `ProductListPage`:按分类分页列表(加载更多),`GET /api/v1/products?category=&page=&size=`。
 - `ProductDetailPage`:产品资料(保障责任、条款、费率试算入口),`GET /api/v1/products/:id`;CTA「立即投保」→ `/quote/:id`。
-- `SearchPage`:全局搜索,`GET /api/v1/search?keyword=&type=`,含历史记录(shared_preferences)、联想、空态。
+- `SearchPage`:全局搜索,`GET /api/v1/search?keyword=&type=&page=&size=`,含历史记录(shared_preferences)、联想、空态。
+  公开搜索只返回 `ON_SALE` 商品,参数名为 `keyword` / `type`(不是 `q` / `index`)。
+- 运营端(OPERATOR / ADMIN):`GET /api/v1/admin/products?status=&page=&size=`,可按 DRAFT / ON_SALE / OFF_SHELF / DISCONTINUED 过滤。
 - 控制器: `ProductListController`(分页 + 筛选)、`KeywordSearchController`(防抖 + 取消旧请求)。
 
 ### 4.4 features/quote — 投保报价表单
 
 - `QuoteFormPage(productId)`:多步骤表单(被保人信息、保障期/保额选择、健康告知、受益人)。
 - 校验: `validators.dart`(身份证 18 位、手机号、金额范围、必填);表单错误 inline 展示。
-- 试算: 选择档位后本地/接口试算保费。
-- 提交: `POST /api/v1/quotes` → 返回 `Quote`(含 quoteId / premium / 报价有效期)。
+- 试算: 选择档位后调用接口试算;保费由服务端按 `quote_rates`(保额 × 费率)计算,客户端**不提交也不自行计算 premium**。
+  未配置费率行的产品会被拒绝(40000)。
+- 提交: `POST /api/v1/quotes` → 返回 `Quote`(含 quoteId / 服务端计算的 premium / 报价有效期 7 天)。
 - 定价展示: 报价确认页展示保费明细、条款链接 →「下一步」→ `/order/confirm/:quoteId`。
 
 ### 4.5 features/order — 订单
 
-- `OrderConfirmPage(quoteId)`:确认投保方案、被保人摘要、保费、优惠券 → 生成订单 `POST /api/v1/orders`。
+- `OrderConfirmPage(quoteId)`:确认投保方案、被保人摘要、保费 → 生成订单 `POST /api/v1/orders`。
+  后端优惠恒为 0(`discount_amount = 0`),客户端不提交折扣 / 优惠券;应付金额等于报价保费。
 - `OrderListPage`:全部/待支付/已支付订单,`GET /api/v1/orders?status=`。
 - `OrderDetailPage`:订单详情、状态流转、去支付 CTA。
 - 控制器: `OrderController`(下单流水线,见 §9 Step 2)。
 
 ### 4.6 features/payment — 支付
 
-- `PaymentPage(orderId)`:选择支付渠道(微信/支付宝/银行卡/余额)、金额确认、发起支付 `POST /api/v1/payments`。
+- `PaymentPage(orderId)`:选择支付渠道、金额确认,先预支付 `POST /api/v1/payments/{order_id}/prepay`,
+  再发起支付 `POST /api/v1/payments/{order_id}/pay`;渠道白名单 WECHAT / ALIPAY / UNIONPAY / BALANCE / MOCK,本阶段 provider 恒为 MOCK。
 - `PaymentWebView`:Web/部分渠道走 H5 收银台 + JS bridge 回跳。
-- `PaymentResultPage`:支付结果轮询 `GET /api/v1/payments/:orderId/status`,成功 → 保单生成 → 跳转保单/签署。
+- `PaymentResultPage`:轮询 `GET /api/v1/orders/{order_id}` 直到 `PAID`,再调用 `POST /api/v1/policies { order_id }` 签发保单 → 跳转保单/签署。
+- 支付回调是服务端到服务端:回调方携带 `X-Callback-Token`,客户端**不接触也不发送**该令牌。
 - 多端差异见 §8(移动端 SDK 拉起 vs Web 收银台 vs 桌面扫码)。
 
 ### 4.7 features/policy — 保单列表 / 详情
 
-- `PolicyListPage`:我的保单,`GET /api/v1/policies`,状态筛选(有效/待生效/已到期)。
-- `PolicyDetailPage`:保单摘要、保障内容、期限、缴费记录、下载 PDF(`GET /api/v1/policies/:id/pdf`)、去签署入口(若存在待签合同)。
+- `PolicyListPage`:我的保单,`GET /api/v1/policies`,状态筛选(ACTIVE / SURRENDERED 等)。
+- `PolicyDetailPage`:保单摘要、保障内容、期限、缴费记录、去签署入口(若存在待签合同);
+  退保 `POST /api/v1/policies/{id}/lapse`(ACTIVE → SURRENDERED)。
+- 续保暂未开放:需重新走报价 → 订单 → 支付 → 签发流程,客户端不展示续保 CTA。
+- PDF 下载为规划项(后端暂无 PDF 端点);当前只展示接口返回的保单数据。
 - 控制器: `PolicyController`。
 
 ### 4.8 features/contract — 合同列表 / 电子签署
 
-- `ContractListPage`:待签/已签合同,`GET /api/v1/contracts?status=unsigned`。
+- `ContractListPage`:待签/已签合同。后端暂无合同列表端点,入口按保单 / 订单关联展示。
 - `ContractSignPage(contractId)`:嵌入 `AppWebView`,加载 `POST /api/v1/contracts/:id/sign-url` 返回的签署页;通过 JS channel 监听签署完成事件。
 - 签署动作: 签名落库 `POST /api/v1/contracts/:id/sign`(或交由 H5 签署平台回调),完成后刷新合同状态引导查看。
 - 差异:移动端原生 + WebView 双通道;Web/桌面见 §8。
@@ -335,7 +345,8 @@ class ApiClient {
 ### 4.9 features/profile — 我的
 
 - 个人信息、实名认证状态、我的订单/保单/合同入口、联系客服、设置(主题/退出登录)、关于。
-- 头像/昵称维护 `PATCH /api/v1/auth/me`(预留 domain 扩展)。
+- 账号维护:改密 `POST /api/v1/user/password`、换绑手机 `POST /api/v1/user/phone`(均需当前 access token)。
+- 头像/昵称维护为规划项(后端暂无对应端点)。
 
 ---
 
@@ -422,7 +433,7 @@ class Quote with _$Quote {
     required int term,               // 保障期
     required int coverageAmount,
     required DateTime expiresAt,     // 报价有效期
-    required String status,          // draft / confirmed / expired
+    required String status,          // PENDING / CONVERTED / EXPIRED / CANCELLED ...
     List<HealthDeclarationItem>? healthDeclarations,
     DateTime? createdAt,
   }) = _Quote;
@@ -442,7 +453,7 @@ class Order with _$Order {
     required String productName,
     required num amount,             // 应付金额
     required String currency,
-    required String status,          // created / paying / paid / cancelled
+    required String status,          // CREATED / PAID / POLICY_ISSUED / EXPIRED ...
     String? paymentId,
     required DateTime createdAt,
     DateTime? paidAt,
@@ -456,8 +467,8 @@ class Payment with _$Payment {
     required String id,
     required String orderId,
     required num amount,
-    required String channel,         // wechat / alipay / unionpay / balance
-    required String status,          // pending / success / failed / refunding
+    required String channel,         // WECHAT / ALIPAY / UNIONPAY / BALANCE / MOCK
+    required String status,          // CREATED / SUCCESS / FAILED ...
     required String payUrl,          // H5/收银台 url(Web 用)
     String? tradeNo,
     DateTime? paidAt,
@@ -479,7 +490,7 @@ class Policy with _$Policy {
     required String insuredName,
     required String holderName,      // 投保人
     required num premium,
-    required String status,          // active / awaiting / expired / cancelled
+    required String status,          // PENDING_ISSUE / ACTIVE / LAPSED / SURRENDERED ...
     required DateTime startDate,
     required DateTime endDate,
     String? pdfUrl,
@@ -499,7 +510,7 @@ class Contract with _$Contract {
     required String contractNo,
     required String policyId,
     required String title,
-    required String status,          // unsigned / signed / invalid
+    required String status,          // DRAFT / PENDING_SIGN / COMPLETED / VOID ...
     required String signUrl,         // 电子签署页 url
     DateTime? signedAt,
     required DateTime createdAt,
@@ -536,7 +547,9 @@ class BaseResponse<T> with _$BaseResponse<T> {
 |---|---|---|
 | `code == 0` | 无,正常返回 `data` | — |
 | HTTP 4xx / `code != 0`(业务) | `BizException(code, message, traceId)` | 顶部 SnackBar 或表单内联展示 message |
-| HTTP 401 / 业务码 401 | 由 TokenRefresh 处理 | 静默刷新,失败 → 登出引导登录 |
+| HTTP 401 / 业务码 40100 | 由 TokenRefresh 处理 | 静默刷新,失败 → 登出引导登录 |
+| HTTP 403 / 业务码 40300 | `BizException(40300, 无权限)` | 提示无权限,不重试 |
+| HTTP 429 / 业务码 42900 | `BizException(42900, 请求过于频繁)` | 提示稍后重试 |
 | 超时 / 无网 | `NetworkException` | 全屏 error 态 + 重试 |
 | 解析异常 | `ParseException` / `ApiException` | error 态 |
 | 5xx | `ServerException` | 提示稍后重试,带 traceId |
@@ -640,7 +653,7 @@ flutter build web --release --dart-define=APP_ENV=prod
 |---|---|
 | iOS / Android | `payment_launcher.dart` 拉起原生 SDK(微信/支付宝)或 App 间跳转;结束回调 + 服务端确认 | 
 | Web | 走 `payUrl` H5 收银台,新窗口/iframe 打开,支付后 JS 回调 + 轮询状态兜底 |
-| 桌面(Windows/macOS) | 展示**付款二维码**扫码支付(微信/支付宝),轮询 `GET /payments/:id/status` |
+| 桌面(Windows/macOS) | 展示**付款二维码**扫码支付(微信/支付宝),轮询 `GET /orders/{id}` 确认状态 |
 
 统一出口:定于 `PaymentLauncher` 抽象接口,按平台实现(SDK / 网页 / 二维码),`PaymentPage` 不关心平台。支付结果一律以**服务端轮询确认**为准(防客户端伪造)。
 
@@ -680,8 +693,9 @@ flutter build web --release --dart-define=APP_ENV=prod
 ```
 ProductDetailPage --点击投保--> QuoteFormPage
   多步骤表单校验(validators.dart)
-  POST /api/v1/quotes { productId, insuredInfo, planId, beneficiaries, healthDeclarations }
-  → Quote{ id, premium, expiresAt }
+  POST /api/v1/quotes { product_id, holder_name, insured_name, insurance_amount,
+                        term_months, beneficiaries, health_declaration, ... }
+  → Quote{ id, premium(服务端计算), expiresAt(7 天) }
   --确认--> /order/confirm/:quoteId
 ```
 
@@ -689,8 +703,8 @@ ProductDetailPage --点击投保--> QuoteFormPage
 
 ```
 OrderConfirmPage
-  POST /api/v1/orders { quoteId, ... }
-  → Order{ id, orderNo, amount, status: created }
+  POST /api/v1/orders { quote_id, remark? }     # 不传折扣 / 优惠
+  → Order{ id, orderNo, amount = 报价保费, status: CREATED }
   --去支付--> /payment/:orderId
 ```
 
@@ -698,18 +712,19 @@ OrderConfirmPage
 
 ```
 PaymentPage
-  选择渠道 → POST /api/v1/payments { orderId, channel } → Payment{ payUrl/签名参数 }
+  POST /api/v1/payments/{order_id}/prepay { channel } → Payment{ payUrl/签名参数 }
+  POST /api/v1/payments/{order_id}/pay          # Mock 渠道直接支付
   移动:拉起SDK / Web:收银台 / 桌面:二维码 → 用户完成
-  轮询 GET /api/v1/payments/:orderId/status → success
-      → 服务端后台触发生成 Policy
+  轮询 GET /api/v1/orders/{id} → status = PAID
+      → POST /api/v1/policies { order_id } 签发保单(幂等)
   --结果--> PaymentResultPage → /policy/:id
 ```
 
 ### Step 4 保单生成与查看
 
 ```
-支付成功 → 服务端生成 Policy(active)
-PolicyListPage  → PolicyDetailPage(下载PDF、缴费记录)
+支付回调成功 → 订单 PAID → 客户端调用 POST /policies { order_id } → Policy(ACTIVE)
+PolicyListPage  → PolicyDetailPage(缴费记录;PDF 为规划项)
    若存在待签合同 → 引导 /contract/sign/:contractId
 ```
 

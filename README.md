@@ -3,8 +3,9 @@
 保险服务平台后端服务（Rust 版）。基于 `bee_rust`（bee 管线 + 路由 + ORM 骨架）、`axum`、`tokio`
 构建，目标覆盖保险业务从「商品展示 → 报价 → 订单 → 支付 → 保单 → 电子签约 → 理赔」的完整闭环。
 
-当前迭代处于 **阶段 0 → 1**：已落地**用户认证、保险商品、MySQL LIKE 搜索、报价、理赔（含审核）**业务能力，并打通
-**报价 → 订单 → 支付 → 保单 → 签约**交易闭环 API（支付 / 电子签当前为 Mock 渠道），并已提供**运营后台商品建档与上下架**接口。
+当前版本 **v1.11.0**：已落地**用户认证、保险商品、MySQL LIKE 搜索、报价、理赔（含审核）**业务能力，并打通
+**报价 → 订单 → 支付 → 保单签发 → 签约**交易闭环 API（支付 / 电子签当前为 Mock 渠道），
+并提供**保单签发 / 退保**与**运营后台商品建档、上下架与按状态查询**接口。
 
 服务仅提供 JSON 接口；`/api/v1/*` 与其他路径的未匹配请求都返回统一 JSON 信封，不提供 HTML 页面。
 
@@ -12,8 +13,8 @@
 |------|-----|
 | 语言 / 版本 | Rust 2024 edition（rust-version ≥ 1.87） |
 | 许可证 | 仅供个人学习；商业使用需授权（详见「项目授权 / Project License」） |
-| 版本 | 1.10.0 |
-| HTTP 框架 | axum 0.8 + bee_rust（bee_router / bee_orm / 过滤器管线） |
+| 版本 | 1.11.0 |
+| HTTP 框架 | axum 0.8 + bee_rust（bee_router / bee_orm，vendored 1.0.6） |
 | 存储 | MySQL 8.4（业务库，表主键由应用层 idgen_rs snowflake 生成）· 内存缓存（限流 / 会话） |
 
 ---
@@ -26,9 +27,9 @@
 
 - **客户端**：Flutter App、微信小程序、HarmonyOS App、运营管理后台。
 - **接入层**：`bee_rust + axum` 提供 `/healthz` 健康检查与 `/api/v1/*` 业务路由。
-- **中间件过滤器链**：`Trace → 限流（进程内固定窗口，按对端 socket IP）→ JWT 认证（RBAC）→ Controller 分派`，
+- **中间件链（axum middleware）**：`Trace → 限流（进程内固定窗口，按对端 socket IP）→ JWT 认证（RBAC）→ Controller 分派`，
   拒绝即返回 `401 / 403 / 429` 统一信封，不进入业务层。受保护路由需
-  `Authorization: Bearer <access token>`。
+  `Authorization: Bearer <access token>`；`Trace` 位于最外层，404 / 401 / 429 响应同样带 `X-Trace-Id`。
 - **Controller / Service**：auth / product / search / quote / order / payment / policy / contract / claim
   各业务 Controller 经 `bee_router` 分发；Service 为事务边界（`services/*_service.rs`）。
 - **支付与签约**：当前为内联 Mock 实现（微信 / 支付宝 / 易签等外部渠道未接入）。
@@ -46,11 +47,14 @@
 - **报价**：费率表驱动（`quote_rates` 按产品 / 保障期 / 保额区间定价）；未配置费率行则拒绝报价，保费一律由服务端按 保额 × 费率 计算，不接受客户端保费。
 - **全文搜索**：MySQL LIKE（带分页保护）。
 - **交易闭环**：报价 → 订单 → 支付（预下单 / 支付 / 回调）API 已挂载；微信渠道当前为 Mock，真实渠道规划中。
-- **保单与契约**：保单列表 / 详情、受益人批改（`POLICY_ENDORSE` 审计留痕）、电子合同内联 Mock 签署与签署回调 API 已挂载；外部电子签渠道未接入。
+- **保单与契约**：保单签发（订单须已支付，幂等）/ 列表 / 详情 / 退保（`POLICY_LAPSE` 审计留痕）、
+  受益人批改（`POLICY_ENDORSE` 审计留痕）、电子合同内联 Mock 签署与签署回调 API 已挂载；
+  续保暂未开放（需重新走报价 → 订单 → 支付流程）；外部电子签渠道未接入。
 - **理赔**：报案（`CLM` 单号，校验保单归属）、我的理赔列表、审核（APPROVE / REJECT，需 OPERATOR / ADMIN）、资料上传 / 列表（`claim_documents` 元数据）已实现。
 - **运营 / 审计**：运营后台 API、`audit_logs` 全量留痕 + 审计查询接口（`/api/v1/admin/audit-logs`，OPERATOR / ADMIN）。
-- **横切能力**：JWT 认证（受保护路由需 `Authorization: Bearer`）/ RBAC、参数化查询、AES-256-GCM 敏感字段加密、
-  令牌精确过期（leeway=0）、snowflake 分布式主键（idgen_rs 无锁生成，worker 位长 6 + 序列位长 6，
+- **横切能力**：JWT 认证（受保护路由需 `Authorization: Bearer`）/ RBAC、参数化查询、
+  `users.phone_enc` 字段级 AES-256-GCM 加密与脱敏、令牌精确过期（leeway=0）、
+  snowflake 分布式主键（idgen_rs 无锁生成，worker 位长 6 + 序列位长 6，
   worker_id 经 `IDGEN_WORKER_ID` 配置）、全链路 `trace_id`、统一响应信封（`{code, message, data}`，
   业务错误 `40000`；数据库 / 内部错误只记日志，响应统一 `50000` 通用文案）。
 
@@ -58,7 +62,7 @@
 
 ![请求生命周期](docs/lifecycle.svg)
 
-一次 `/api/v1/*` 请求自接入路由起，依次穿过过滤器链、Controller / Service、数据访问与外部
+一次 `/api/v1/*` 请求自接入路由起，依次穿过 axum 中间件链、Controller / Service、数据访问与外部
 Provider 适配层，最终以统一信封返回；全程透传 `trace_id`，审计点落库受理。
 
 ## 项目结构
@@ -120,8 +124,10 @@ insurance-service/
 │   ├── search/                # searchable_impl（搜索序列化）
 │   └── utils/                 # validator · idgen（snowflake）
 └── tests/
-    ├── auth_tokens.rs         # 令牌生命周期：access / refresh 类型隔离与版本（1 项）
-    └── audit_regression.rs    # 审计修复回归：交易闭环 / 归属 / 可见性 / 回调 / trace（5 项，4 项 DB 门控）
+    ├── common/mod.rs          # 集成测试夹具：配置 / 用户 / 商品 / 费率 / 请求辅助
+    ├── trade_flow.rs          # 交易闭环、归属隔离、回调令牌（DB 门控）
+    ├── public_surface.rs      # 公开目录 / 搜索 / 报价费率 / trace（部分 DB 门控）
+    └── auth_tokens.rs         # 令牌生命周期：access / refresh 类型隔离与版本（1 项）
 ```
 
 ## 使用说明
@@ -160,6 +166,9 @@ cargo run            # 启动，监听 SERVER_HOST:SERVER_PORT（默认 0.0.0.0:
 curl http://127.0.0.1:8080/healthz   # 健康检查
 ```
 
+- `bee-rust` 1.0.6 已 vendored 至 `vendor/bee-rust`（源码快照 `93dd5c57`），构建不依赖 GitHub git；
+  其余 registry 依赖在冷缓存下仍从 crates.io 下载。
+
 ### 测试
 
 ```bash
@@ -169,14 +178,15 @@ TEST_DATABASE_URL='mysql://user:pass@127.0.0.1:3306/insurance_service' cargo tes
 ```
 
 - 当前测试规模：50 个测试 = 44 个单元测试（lib）+ 6 个集成测试（`tests/auth_tokens.rs` 1 项、
-  `tests/audit_regression.rs` 5 项）。`audit_regression` 中 4 个 DB 用例由 `TEST_DATABASE_URL`
-  门控（未设置时直接返回）；覆盖交易闭环（报价 → 订单 → 双支付回调 → 保单幂等 → 签约 → 理赔 →
-  退保）、跨用户归属隔离、公开目录与搜索可见性、回调令牌鉴权、404/429 的 trace_id 一致性。
+  `tests/trade_flow.rs` + `tests/public_surface.rs` 共 5 项，公共夹具在 `tests/common/mod.rs`）。
+  其中 4 个 DB 用例由 `TEST_DATABASE_URL` 门控（未设置时直接返回）；覆盖交易闭环（报价 → 订单 →
+  双支付回调 → 保单幂等 → 签约 → 理赔 → 退保）、跨用户归属隔离、公开目录与搜索可见性、
+  回调令牌鉴权、404/429 的 trace_id 一致性。
   单元测试覆盖限流窗口、加解密与脱敏、身份证 / 手机号校验、snowflake 唯一性、搜索转义、
   报价试算、支付回调令牌比较、JWT 类型隔离、健康检查与统一 404 信封等，均不依赖 MySQL。
 - 按项目约定（CLAUDE.md）：代码变更后**先跑测试、再提交**。
 
-### 已实现 API 概览（阶段 0 → 1）
+### 已实现 API 概览（v1.11.0）
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
@@ -228,8 +238,10 @@ TEST_DATABASE_URL='mysql://user:pass@127.0.0.1:3306/insurance_service' cargo tes
   重复预支付产生多笔支付单时，竞争回调会整笔回滚、支付单留在 `CREATED`，当前没有自动退款或对账路径。
 - **限流**：进程内固定窗口、按对端 socket IP（不读取可伪造的 `X-Forwarded-For`）；部署在反向代理后
   时所有请求会共享代理 IP，需在代理层另做按客户端限流。
-- **安全边界**：服务不含入站 WAF / 内容扫描；安全依赖 JWT + RBAC、参数化查询、请求体大小限制
-  （2 MiB）与上述限流，公网部署前请按需补充网关层防护。
+- **安全边界**：服务不含 `SecurityFilter` 或入站 WAF / 内容扫描；安全依赖 JWT + RBAC、参数化查询、
+  请求体大小限制（2 MiB）与上述限流，公网部署前请按需补充网关层防护。
+- **敏感字段**：`users.phone_enc` 由服务端 AES-256-GCM 加密；报价 / 受益人等 `*_enc` 列直接保存
+  上游传入的字节，服务端不解密、不重新加密。
 
 ---
 

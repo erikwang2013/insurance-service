@@ -4,7 +4,7 @@ members = ["."]            # 单 crate；后续可按需拆分 crates/
 default-members = ["."]    # 测试/构建默认只针对本 crate，不含 vendor 快照
 
 [workspace.package]
-version = "1.10.0"
+version = "1.11.0"
 edition = "2024"
 license = "Apache-2.0"
 rust-version = "1.87"
@@ -54,7 +54,7 @@ mysql_async = { version = "0.34", features = ["chrono"] }
 
 [package]
 name = "insurance-service"
-version = "1.10.0"
+version = "1.11.0"
 edition = "2024"
 rust-version = "1.87"
 description = "保险服务平台后端（bee-rust 阶段 0 骨架）"
